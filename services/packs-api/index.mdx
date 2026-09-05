@@ -19,17 +19,175 @@ Two tables (`models.py`): the `PracticeArea` registry — the source of
 truth for what practice areas exist (ADR 0003) — and `Pack`: a practice
 area key, a server-assigned version number, and a `sections` JSON object
 holding the content itself (lifecycle phase labels, the `legal_domain`
-structure, ...). New kinds of content are new JSON keys, not new columns
-— practice areas are data, never a hardcoded enum (ADR 0002). Finding
-types and document categories are NOT pack content (ADR 0003): those
-vocabularies belong to the services that detect them.
+structure, the `analysis` structure, ...). New kinds of content are new
+JSON keys, not new columns — practice areas are data, never a hardcoded
+enum (ADR 0002). Finding types and document categories are NOT pack
+content (ADR 0003): those vocabularies belong to the services that
+detect them.
+
+### The `legal_domain` section
+
+A practice area's legal shape: `areas_of_practice`, `causes_of_action`
+(each pointing at an area by key), `order_provision_types` (the
+order/provision behaviors a case in this practice area can produce), and
+`order_kinds` — the kinds of orders a case's provisions attach to,
+ranked by `precedence` for when they conflict (family law: `statute` (1)
+< `standing_order` (2) < `temporary_order` (3) < `final_order` (4)).
+`pack_contract.validate_legal_domain_section` shape-checks all four
+lists at publish time: each entry needs a `key` and a `label`;
+`order_kinds` entries also need an integer `precedence`, and both keys
+and precedence values must be unique within the list.
+
+### The `analysis` section (FS-984, part of FS-982)
+
+Practice-area-specific analysis content that analysis-api's engine
+consumes instead of hardcoding it: the tier-1/tier-2 rule engine's
+regex pattern sets, thresholds, vocabularies, and finding templates, plus
+the tier-3 AI classifier's prompt. `pack_contract.validate_analysis_section`
+shape-checks it at publish time; it is required to have all six groups
+below whenever an `analysis` section is published:
+
+- `pattern_sets`: five named entries — `profanity`, `threat`,
+  `disparaging`, `custody_schedule`, `child_support` — each an explicit
+  matching policy, not a bare regex-string list: `{"match": "word",
+  "flags": ["IGNORECASE"], "patterns": [...]}`. `match` names the join
+  strategy (`"word"` reproduces analysis-api's `\b(?:alt1|alt2|...)\b`
+  compilation, see `pack_contract.compile_pattern_set`); `flags` names
+  `re` flags by their module attribute name. Publish-time validation
+  compiles every set exactly this way and rejects one that doesn't
+  compile. `tests/test_seed.py` separately proves parity against
+  `tests/fixtures/engine_patterns_<sha>.json`, a snapshot of
+  analysis-api's own literal pattern lists pinned to one analysis-api
+  commit (the `<sha>` in the filename): a byte-equality check that each
+  seed pattern set compiles to the exact same regex source string as the
+  fixture's corresponding literal list, plus a check that the seed's
+  compiled sets and the fixture's patterns agree on a list of sample
+  strings. The fixture itself carries one intentional, documented
+  difference from analysis-api's engine at that commit: its
+  `disparaging` list already drops the engine's mistaken `chase`
+  alternative, so both checks pass on the corrected list, not the
+  engine's original one (see ADR 0004).
+- `thresholds`: `view_delay` (\{`minimum_seconds`, `serious_seconds`\}),
+  `never_viewed_min_age_days`, `mute_ratio`, `camera_off_ratio_bands`
+  (\{`moderate`, `serious`\}), `callback_storm_window`
+  (\{`window_minutes`, `min_call_count`, `max_call_duration_seconds`\}),
+  `default_call_window` (\{`start`, `end`\}, `"HH:MM"` strings),
+  `premature_end_max_seconds`, and `access_denial_repeat_count` (the
+  last two migrated out of analysis-api's `engine.py` literals in the
+  FS-984 fix round — see ADR 0004). Every threshold and financial number
+  must be greater than 0; `min_call_count` and `max_unmatched_detail`
+  must additionally be integers `>= 1`.
+- `vocabularies`: `call_statuses`, `call_types`, and `platforms` (known
+  communication-platform source types) are each a list of `{key,
+  wire_value, label}` entries — `key` is the pack-facing name, `wire_value`
+  is the literal analysis-api's engine actually compares against on the
+  wire (e.g. `call.status == "Unanswered"`, not `"unanswered"` — these
+  are genuinely different strings, not a casing convention). `severities`
+  is a list of `{key, label}` entries naming the severity levels this
+  pack's checks can report; `financial.severity_bands[].severity` and
+  `financial.default_severity` (see below) must each reference a key
+  declared here. Three role sets tell the engine which declared keys mean
+  what: `not_answered_statuses` (a list of `call_statuses` keys),
+  `completed_status` (one `call_statuses` key), and `video_call_type`
+  (one `call_types` key). **The pack never says which platform is
+  mandated for a case** — that is a per-case order term, not pack
+  content.
+- `financial`: `severity_bands` (a list of `{ceiling, severity}`, scanned
+  in order — the first ceiling a payment amount is strictly less than
+  decides its severity, and `default_severity` applies above the last
+  ceiling), `default_severity`, `tolerance_days`, `tolerance_amount`,
+  `payment_keywords`, `max_unmatched_detail` — the parameters of the
+  unmatched-payment cross-account scan. Ceilings must be positive and
+  strictly ascending; every `severity_bands[].severity` and
+  `default_severity` value must reference a key declared in
+  `vocabularies.severities` — an undeclared severity is rejected at
+  publish time.
+- `templates`: per finding type, `{title, description, category}`. Every
+  `{placeholder}` in every one of those three fields must name a fact in
+  the canonical set below — publish-time validation parses each string
+  with `string.Formatter` and rejects an undocumented placeholder, then
+  renders it against dummy values of every canonical fact to prove it
+  actually formats. Titles are phrased as measurements ("Message viewed
+  after the view-delay threshold"), not conclusions, and no threshold
+  number is ever hardcoded into the prose — a number always arrives as a
+  placeholder fact (for example `{window_minutes}`), because it's
+  pack data that can change without a template rewrite.
+- `prompt`: `{system, user, version}` — the tier-3 classifier's prompt
+  text. `system` must contain `{jurisdiction_name}` and
+  `{practice_area_label}`; `user` must contain `{text}` and
+  `{provision_text}`. Neither `system` nor `user` may hardcode a
+  jurisdiction or practice-area name: the rule, applied word-boundary
+  and case-insensitive so it does not misfire on a word that merely
+  contains a banned name (`"remained"` contains "Maine", `"Indianapolis"`
+  contains "Indiana"), is that the text may not contain any of the 50 US
+  state names plus "District of Columbia" (from `data/jurisdictions.json`,
+  see below), or any label currently registered in the practice-area
+  registry. A state name only ever arrives as the `{jurisdiction_name}`
+  fact, a practice-area name only as `{practice_area_label}`.
+  `validate_analysis_section(section, known_practice_area_labels=...,
+  jurisdiction_names=...)` takes both banned-name sets as arguments
+  rather than looking either up itself — see "`pack_contract.py`" below
+  for why, and `Store.publish` for where they come from.
+
+#### The canonical template fact set
+
+Every `{placeholder}` a template (`title`, `description`, or `category`)
+can use is one of these — this is the contract analysis-api's detection
+engine (FS-989, the pack-reading issue; FS-985 is a separate, unrelated
+piece of analysis-api's own architecture, the condition-type registry)
+commits to emitting at render time. List-valued
+facts (e.g. multiple pattern-set matches) always arrive pre-joined into
+a single string, never a list — `matches_preview`, not `matches`.
+
+- **Record facts**: `record_id`, `record_datetime`, `from_party`,
+  `to_party`, `status`, `call_type`, `duration_seconds`, `source_type`
+- **Party facts**: `party_name`
+- **Provision facts**: `provision_id`, `provision_title`,
+  `provision_text`
+- **Rule facts**: `rule_id`, `condition_type`
+- **Per-check measures**: `delay_hours`, `delay_days`,
+  `camera_off_ratio`, `mute_ratio`, `call_count`, `window_minutes`,
+  `matches_preview`, `amount`, `institution`, `occurred_date`,
+  `unmatched_count`, `max_unmatched_detail`, `tolerance_days`,
+  `tolerance_amount`, `mandated_platform`
+
+The authoritative list is `pack_contract.CANONICAL_TEMPLATE_FACTS`; add a
+fact there (and to the documentation above) before any template may
+reference it.
+
+## `pack_contract.py`
+
+The section contracts (`validate_legal_domain_section`,
+`validate_analysis_section`, and `compile_pattern_set`) live in
+`pack_contract.py`, not `store.py`. That module has no `sqlalchemy` or
+`sqlmodel` import, and every validator and compiler in it is a pure
+function over plain dicts, with no disk or database access of its own —
+specifically so a sibling repo can `import pack_contract` and validate
+or compile pack content it has already read, without pulling in this
+service's database stack or carrying a `data/` directory alongside the
+file it copied.
+`validate_analysis_section` takes the two banned-name sets a caller must
+supply — `known_practice_area_labels` and `jurisdiction_names` — as
+arguments rather than reading either itself; both default to an empty
+set, so calling it with neither still runs the shape check, just with an
+empty banned-name list. `load_jurisdiction_names()` is the one function
+in this module that touches disk (it reads `data/jurisdictions.json`,
+see "Seed content" below) — it is a helper a caller runs once to build
+the `jurisdiction_names` argument, never something a validator calls
+itself. `store.py` imports `load_jurisdiction_names` and the two
+`validate_*` functions and wires them together in `Store.publish`;
+`pack_contract.py` itself has no dependency on `store.py` or the
+database. This is the module path sibling repos should load, not
+`store.py`.
 
 ## HTTP surface
 
 Internal only:
 
 - `POST /internal/practice-areas/{key}` — register a practice area
-  (idempotent); publishing requires it (ADR 0003).
+  (idempotent); publishing requires it (ADR 0003). Body: `{"label": "..."}`;
+  a blank label is a 422, because every registered label is also a name
+  the analysis prompt must not hardcode.
 - `GET /internal/practice-areas/{key}` — one registered practice area.
 - `POST /internal/practice-areas/{key}/packs` — publish a new version.
   Body: `{"sections": {...}}`. The store assigns the version number
@@ -50,13 +208,55 @@ changes (ADR 0001).
 
 `seed/family-law.json` is the first pack: family law's lifecycle labels
 (Intake → Discovery → Mediation → Trial, the ruled instance per platform
-DESIGN.md section 6) plus the `legal_domain` structure — 9 areas of
-practice, 9 causes of action, and 25 order/provision types, where an
-entry may carry `status` ("active", or "reserved" for a type named by
-the engine's dispatch with no working evaluator yet) and a `category`.
-`seed.py` loads it; `tests/test_seed.py` publishes it through the store
-to prove the committed file is real, publishable content, not just an
-example.
+DESIGN.md section 6), the `legal_domain` structure — 9 areas of
+practice, 9 causes of action, 25 order/provision types (an entry may
+carry `status` — "active", or "reserved" for a type named by the
+engine's dispatch with no working evaluator yet — and a `category`), and
+4 order kinds ranked by precedence — and, as of FS-984, the `analysis`
+section: the regex pattern sets, thresholds, vocabularies, financial
+parameters, finding templates, and classifier prompt migrated out of
+analysis-api's `engine.py`, `financial.py`, and `classifier.py` as pack
+content. `seed.py` loads it; `tests/test_seed.py` publishes it through
+the store to prove the committed file is real, publishable content, not
+just an example.
+
+`data/jurisdictions.json` is a separate file, not a pack: a plain list of
+the 50 US state names plus "District of Columbia," the data
+`pack_contract.load_jurisdiction_names()` reads to build the
+`jurisdiction_names` set `Store.publish` passes into
+`validate_analysis_section` (see above). It lives under `data/`, not
+`seed/`, because it is validator input the store loads on every publish,
+not versioned pack content a practice area publishes.
+
+**How the seed actually gets published**: `seed.publish_seed(store, name)`
+loads the seed file, registers its practice area (idempotent), then
+calls the same `store.publish(practice_area_key, sections)` any other
+publisher would call — there is no separate seed-only write path.
+Because ADR 0001 makes every `Store.publish` call create a new version
+unconditionally — even one whose content is byte-for-byte identical to
+the current version, by design — `publish_seed` compares the seed's
+`sections` against the current published version first and skips the
+publish call if they match, returning `None` rather than a `Pack`. This
+guard exists so re-running the seed script against an unchanged file
+doesn't leave a trail of identical versions; it does not change what
+`Store.publish` itself guarantees — calling `store.publish` directly
+with identical content still creates a new version, exactly as ADR
+0001 says it must. `publish_seed` is invoked by `tests/test_seed.py`
+today and by no deploy step — there is no lifespan hook, startup
+script, or CLI entry point that calls it outside the test suite.
+
+**Shared-fixture rule (future)**: `seed/family-law.json` is this
+service's own seed data today. It is designed to become the fixture
+sibling repos load directly by path in their own tests, once each of
+them exists and wires up that loader — analysis-api (FS-989, the
+detection engine that will actually read this file and emit the
+canonical template facts documented above; FS-985 is a separate issue,
+the condition-type registry, not a pack-reading door), case-api
+(FS-987), and state-law-api (FS-986). None of those loaders exist yet,
+and no sibling repo's test suite has been run against this file.
+Changing this file's shape is a forward-looking cross-repo contract
+change: keep it aligned with what those issues will need, not just
+what this service needs today.
 
 ## Setup
 

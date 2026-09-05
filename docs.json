@@ -462,7 +462,8 @@
                 "pages": [
                   "services/packs-api/decisions/0001-packs-are-versioned-immutable-content",
                   "services/packs-api/decisions/0002-practice-areas-are-data",
-                  "services/packs-api/decisions/0003-packs-carry-legal-domain-structure-not-product-vocabulary"
+                  "services/packs-api/decisions/0003-packs-carry-legal-domain-structure-not-product-vocabulary",
+                  "services/packs-api/decisions/0004-analysis-content-lives-in-the-pack"
                 ]
               },
               {
@@ -532,7 +533,8 @@
                   "services/servicekit/decisions/0003-pagination-owns-only-the-offset-loop",
                   "services/servicekit/decisions/0004-publish-versioned-fixes-the-retry-state-law-dropped",
                   "services/servicekit/decisions/0005-fastapi-is-optional-the-header-deps-are-not-hard-wired",
-                  "services/servicekit/decisions/0006-test-only-stream-helpers-leave-the-production-class"
+                  "services/servicekit/decisions/0006-test-only-stream-helpers-leave-the-production-class",
+                  "services/servicekit/decisions/0007-a-heartbeat-keeps-a-long-handler-from-being-reclaimed"
                 ]
               }
             ]

@@ -28,6 +28,14 @@ ADR 0002.
 _Avoid_: stage, step, status (a case's phase and an order's status are
 different vocabularies; don't conflate them)
 
+**Practice area**:
+The legal domain a case belongs to — family law, and so on — stored on
+`Case.practice_area` as a registry string. It names which practice-area
+pack owns the case's vocabularies, so it is the key the `PacksReader`
+joins on when it validates a phase. Required on every case; never an
+enum. See ADR 0002.
+_Avoid_: law area, vertical, case type
+
 **Case party**:
 A named party on the case's caption — petitioner, respondent, and similar
 roles — scoped to the case itself. Distinct from a case-team record (who
@@ -45,6 +53,14 @@ One event in the case's register — a filing, a hearing, service of
 process — with an optional result and notes. `kind` and `result` are both
 extensible strings, not enums.
 _Avoid_: docket item, event log entry
+
+**Page**:
+What the paged list doors — cases, orders, docket — return:
+`{items, total}`, where `items` is one window of rows (`limit`, `offset`)
+and `total` is how many rows match in all. Rows come back in a fixed
+order — the door's own sort, then the primary key as the tiebreaker — so
+two reads of the same window agree.
+_Avoid_: results, list (bare), collection
 
 **Workspace**:
 The tenant boundary every row in this store carries. Every store method

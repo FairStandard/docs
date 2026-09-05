@@ -25,17 +25,104 @@ _Avoid_: vertical, tenant
 
 **Section**:
 One named slice of a pack's content (`lifecycle_phases`,
-`legal_domain`, ...). New section kinds are added by publishing content
-with a new key, never by changing this service's schema — that is what
-"extensible data, not enums" means here. `legal_domain` is the
-documented, publish-validated section for a practice area's legal-domain
-structure (areas of practice, causes of action, order/provision types) —
-see ADR 0003. `finding_types` and `document_categories` were removed
-2026-08-31 (ADR 0003): they were placeholder content with no ruled
-source and no live consumer — those vocabularies belong to the services
-that detect/label them (analysis-api, intake-api/files-api), not to a
-pack.
+`legal_domain`, `analysis`, ...). New section kinds are added by
+publishing content with a new key, never by changing this service's
+schema — that is what "extensible data, not enums" means here.
+`legal_domain` is the documented, publish-validated section for a
+practice area's legal-domain structure (areas of practice, causes of
+action, order/provision types, order kinds) — see ADR 0003. `analysis`
+is the documented, publish-validated section for a practice area's
+analysis content (regex pattern sets, thresholds, vocabularies,
+financial parameters, finding templates, classifier prompt) — see ADR
+0004. `finding_types` and `document_categories` were removed 2026-08-31
+(ADR 0003): they were placeholder content with no ruled source and no
+live consumer — those vocabularies belong to the services that
+detect/label them (analysis-api, intake-api/files-api), not to a pack.
 _Avoid_: field, column (sections are content, not schema)
+
+**Order kind**:
+One entry in `legal_domain.order_kinds`: a kind of order a practice
+area's provisions attach to (family law: `statute`, `standing_order`,
+`temporary_order`, `final_order`), carrying a `precedence` used to rank
+which order wins when two orders' terms conflict. Added FS-984 (ADR
+0004) as part of the legal-domain structure — same publish-validated
+discipline as areas of practice and causes of action, plus two rules of
+its own: keys are unique and precedence values are unique within the
+list.
+_Avoid_: order type (too easily confused with `order_provision_types`,
+a different list entirely — a provision type is a behavior a case
+recognizes, an order kind is what kind of order carries that behavior)
+
+**Analysis section**:
+The `analysis` section: a practice area's analysis content, in the same
+sense that `legal_domain` is a practice area's legal-domain content.
+Holds what analysis-api's detection engine, financial-forensics module,
+and tier-3 classifier used to hold as Python literals — regex pattern
+sets, thresholds, vocabularies, financial-scan parameters, per-finding
+display templates, and the classifier's prompt text — so that
+practice-area-specific analysis behavior is pack content a firm can read
+and a future practice area can supply its own version of, not code baked
+into one service. Added FS-984 (ADR 0004). The mandated communication
+platform for a case is never analysis-section content — `platforms`
+here is the list of known platform identifiers, not a statement of which
+one a given case requires. The section's contract (shape validation plus
+`compile_pattern_set`) lives in `pack_contract.py`, a dependency-free
+module a sibling repo can import directly; every template placeholder
+must name one of the canonical template facts documented there and in
+README.md — the contract FS-989's detection engine commits to emitting.
+_Avoid_: rules, config (this is content with the same "pack" discipline
+as `legal_domain` — versioned, immutable, publish-validated — not a
+knob analysis-api tunes itself)
+
+**Pattern set**:
+One named entry in `analysis.pattern_sets` (`profanity`, `threat`,
+`disparaging`, `custody_schedule`, `child_support`): an explicit matching
+policy, `{match, flags, patterns}`, not a bare list of regex strings. The
+point is `match`, which names the join strategy — `"word"` is the only
+value today, and it means `pack_contract.compile_pattern_set` joins
+`patterns` into `\b(?:alt1|alt2|...)\b`, reproducing analysis-api's own
+compilation exactly. A reader who only sees the `patterns` list is
+missing the part of the pack that says how those strings become a regex.
+_Avoid_: regex list (names the alternatives but drops the matching
+policy that turns them into a working pattern)
+
+**Wire value**:
+The literal a vocabulary entry's consumer actually compares against on
+the wire — `call_statuses`/`call_types`/`platforms` entries carry
+`{key, wire_value, label}`, and `wire_value` is neither of the other
+two. analysis-api's `engine.py` compares `call.status` against
+capitalized strings (`"Unanswered"`, `"Missed"`, `"Completed"`,
+`"Video"`), not the pack's lowercase `key` (`"unanswered"`, ...) and not
+the human-readable `label` — these are three genuinely different
+strings serving three different readers (code, the wire, a person), not
+one string in three casings.
+_Avoid_: key (the pack-facing name a role set or template references,
+not what a consumer compares against)
+
+**Jurisdiction name**:
+One of the 50 US state names plus "District of Columbia," loaded from
+`data/jurisdictions.json` via `pack_contract.load_jurisdiction_names()`.
+`Store.publish` passes this set into `validate_analysis_section` as
+`jurisdiction_names`, which `analysis.prompt`'s `system`/`user` text may
+not hardcode (word-boundary, case-insensitive — see README.md). Scope is
+US states and DC only, nothing more: this is not, and does not try to
+be, state-law-api's jurisdiction registry — see ADR 0004's note on why
+that data lives in a packs-owned file instead of a call to that
+registry.
+_Avoid_: jurisdiction (too broad — state-law-api's own jurisdiction
+registry is a different, larger thing this list does not overlap with
+in scope or purpose)
+
+**Role set**:
+One of the three `analysis.vocabularies` fields that says which declared
+vocabulary key plays a given role, rather than the engine hardcoding
+that key itself: `not_answered_statuses` (which `call_statuses` keys
+count as "not answered"), `completed_status` (which one key means
+"completed"), `video_call_type` (which `call_types` key means "video").
+A role set always references keys declared elsewhere in the same
+`vocabularies` object — it never introduces a new key of its own.
+_Avoid_: flag, mapping (a role set names roles among already-declared
+keys, not a boolean toggle or an arbitrary key-to-value table)
 
 **Practice-area registry**:
 The `PracticeArea` table — the source of truth for "what practice areas

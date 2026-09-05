@@ -44,6 +44,8 @@
       "PracticeAreaRegister": {
         "properties": {
           "label": {
+            "minLength": 1,
+            "pattern": "\\S",
             "title": "Label",
             "type": "string"
           }

@@ -1,0 +1,234 @@
+---
+title: "Analysis content lives in the pack, not in analysis-api"
+description: "Ruled 2026-09-04 (Christopher), as part of FS-982. Extends ADR 0003's correction (packs carry legal-domain structure) to a second kind of…"
+---
+
+Ruled 2026-09-04 (Christopher), as part of FS-982. Extends ADR 0003's
+correction (packs carry legal-domain structure) to a second kind of
+practice-area-specific content: what analysis-api's detection and
+classification code held as hardcoded Python literals.
+
+## The problem
+
+analysis-api's tier-1/tier-2 rule engine (`engine.py`), its
+financial-forensics scan (`financial.py`), and its tier-3 AI classifier
+(`classifier.py`) held family-law-specific content as Python literals:
+regex pattern sets for profanity/threats/disparaging remarks/custody and
+child-support references, numeric thresholds (view-delay severity
+bands, camera-off ratio bands, mute ratio, callback-storm window,
+default call-hours window), label vocabularies (call statuses, call
+types, known communication-platform source types), financial-scan
+parameters (severity bands, tolerance days/amount, payment keywords),
+per-finding-type display templates, and the classifier's system/user
+prompt text (hardcoded to Texas family law).
+
+That content is exactly the shape of thing ADR 0003 already ruled
+belongs in a pack, not in a product service: it is what a family-law
+case looks like, not how analysis-api's engine works. A future practice
+area (estate planning, say) needs its own pattern sets, thresholds, and
+prompt wording — none of which analysis-api's code should have to grow
+an if/else for.
+
+## The decision
+
+1. **Practice-area analysis content lives in the pack.** A new
+   `analysis` section (alongside `lifecycle_phases` and `legal_domain`)
+   holds `pattern_sets`, `thresholds`, `vocabularies`, `financial`,
+   `templates`, and `prompt` — the full set of what was mined out of
+   `engine.py`, `financial.py`, and `classifier.py`. It gets the same
+   publish-time validation discipline as `legal_domain`
+   (`validate_analysis_section` in `pack_contract.py`, wired into
+   `Store.publish`, rejecting a publish with `422` if any group is
+   missing or malformed). analysis-api reads this section instead of
+   hardcoding the content; the pack is the seam. The section contracts
+   themselves live in `pack_contract.py`, a dependency-free module (no
+   `sqlalchemy`/`sqlmodel` import) specifically so a sibling repo can
+   import it to validate or compile pack content without pulling in this
+   service's database stack — see "What changed" below.
+
+2. **The mandated communication platform is never pack content.**
+   `analysis.vocabularies.platforms` lists the communication-platform
+   source types the pack's rules and templates know how to talk about
+   (for family law: `ofw`, `imessage`). It does not, and must not, say
+   which platform a given case is required to use — that is a term of
+   that case's court order, decided per case, not a fact about the
+   practice area. A pack answers "what platforms exist"; a case answers
+   "which one applies here." Conflating the two would leak per-case data
+   into shared, immutable, cross-firm pack content.
+
+3. **Packs stay keyed by practice area for now.** `legal_domain.order_kinds`
+   (also added by this change) and the `analysis` section are both still
+   published under a single practice-area key (`family-law`), the same
+   keying ADR 0002 and ADR 0003 already established. This is a known,
+   accepted limit, not an oversight: FS-991 is the tracked follow-up to
+   rekey packs by `(jurisdiction, practice_area)` once state-law-api's
+   own per-jurisdiction structure (that service's ADR 0004) needs to
+   drive pack selection too. Nothing in this change blocks that rekey;
+   it is scoped out of FS-984/FS-982 deliberately rather than solved
+   partially here.
+
+## What changed
+
+- `seed/family-law.json` republishes as a new, immutable pack version
+  (v3): `lifecycle_phases` and the pre-existing `legal_domain` lists are
+  unchanged; `legal_domain` gains `order_kinds` (`statute` < `standing_order`
+  < `temporary_order` < `final_order`, ranked by `precedence`); a new
+  top-level `analysis` section is added in full.
+- `pack_contract.py` gains `validate_analysis_section` (and a new
+  `InvalidAnalysisSectionError`) plus `_validate_order_kinds` (reusing
+  the existing `InvalidLegalDomainSectionError`, since order kinds are
+  part of `legal_domain`'s contract); `store.py` imports both and wires
+  them into `Store.publish`.
+- The disparaging-remarks pattern set was corrected during migration:
+  analysis-api's source pattern had the token `chase` mined into it by
+  mistake — `chase` is a real child's name, not a word that indicates
+  disparagement — and it was dropped before the pattern set became pack
+  content.
+
+## What did not change
+
+- `Pack.sections` stays untyped JSON keyed by section name (ADR 0002) —
+  `analysis` is a new key, not a schema migration.
+- Packs are still keyed by practice area only, not by jurisdiction (see
+  decision 3 above; FS-991 is the tracked rekey).
+
+## Fix round (2026-09-04): spec, standards, and output-gate review
+
+Reviewing this ADR's first version and the v3 seed it described turned
+up findings from all three gates. This section records what changed and
+why, so the reasoning stays with the decision instead of only living in
+a PR diff.
+
+- **The sibling-loader claim was false and has been removed.** The first
+  version of this ADR said `seed/family-law.json` "is still the shared
+  fixture sibling repos (analysis-api among them) load directly by path
+  in their own tests" and that this change "was checked against
+  analysis-api's own test suite before landing." Neither was true: no
+  sibling repo has a loader for this file yet, and no sibling test suite
+  ran against it. The corrected, future-tense version: this file is
+  *designed* to become that shared fixture once each sibling repo builds
+  its own loader — analysis-api (FS-989 builds the detection engine that
+  will actually read
+  `analysis.pattern_sets`/`thresholds`/`vocabularies`/`templates`/`prompt`
+  and emit the canonical template facts documented in README.md; FS-985
+  is a separate, unrelated piece of analysis-api's own architecture, the
+  condition-type registry beside its analyzer registry, not a pack-reading
+  door), case-api (FS-987), and state-law-api (FS-986). Until those issues
+  land, "shared fixture" describes an intended contract, not a fact
+  about what runs today — say so plainly rather than implying a
+  cross-repo check that never happened.
+- **Pattern-set matching policy became explicit pack data.** Each
+  pattern set is now `{match, flags, patterns}` instead of a bare regex
+  list, so the `\b(?:alt1|alt2|...)\b` join and `IGNORECASE` case
+  sensitivity — previously an assumption a reader had to verify against
+  analysis-api's source — are declared, validated on publish, and
+  covered by a test that reconstructs the compiled pattern from pack
+  data and checks it agrees with analysis-api's own literals on sample
+  strings. See `pack_contract.compile_pattern_set`.
+- **Template placeholders now name a documented canonical fact set**,
+  not whatever raw evidence-field name a check function happened to use
+  internally (`camera_off_duration_seconds`, `same_day_unanswered_count`,
+  `durations_seconds`, `keywords_used`, and similar analysis-api-internal
+  names are not in the canonical set and were dropped from template
+  prose). This is the contract FS-989's engine will emit at render time;
+  see README.md's "canonical template fact set" section and
+  `pack_contract.CANONICAL_TEMPLATE_FACTS`.
+- **Vocabularies gained an explicit `wire_value`.** analysis-api's
+  `engine.py` compares `call.status`/`call.call_type` against
+  capitalized literals (`"Unanswered"`, `"Missed"`, `"Completed"`,
+  `"Video"`), not the pack's lowercase keys (`"unanswered"`, etc.) —
+  these are genuinely different strings, not a casing convention, so the
+  mapping needed to be explicit pack data rather than an assumption.
+  `not_answered_statuses`, `completed_status`, and `video_call_type`
+  were added as role sets so the engine can find "which declared key
+  means unanswered/missed" without hardcoding those keys either.
+- **The section contracts moved out of `store.py` into
+  `pack_contract.py`** (a standards-review note): a dependency-free
+  module with no `sqlalchemy`/`sqlmodel` import, so sibling repos can
+  import it directly. The same move replaced roughly thirty repeated
+  `_require_dict(x.get(k), "path.k")` call sites with one small
+  schema-driven walker (`pack_contract._walk_schema`).
+- **`premature_end_max_seconds` (120) and `access_denial_repeat_count`
+  (3) moved into `analysis.thresholds`** — the two numeric thresholds
+  left in analysis-api's `engine.py` for the checks this pack section
+  already covers.
+- **A retained engine literal, not migrated: the phase set.**
+  analysis-api's `engine.py` gates platform-avoidance checking on
+  `phase in ("temporary_orders", "final_decree")` — note the trailing
+  "s" and the different final-phase spelling from this pack's
+  `legal_domain.order_kinds` keys (`temporary_order`, `final_order`).
+  These are not the same concept wearing different spellings; they are
+  two different vocabularies that happen to look similar. This pack does
+  not migrate the phase set, because the check it gates — the
+  hardcoded, tier-one "was this sent outside the mandated platform"
+  rule — is itself deleted in FS-989 and replaced by the generic
+  `communication_channel` detection-rule condition type (see the next
+  point). A literal with no future is not worth migrating; it stays in
+  analysis-api's code until FS-989 removes it along with the rule it
+  gates.
+- **Per-check severity and `ai_confidence` literals: partly migrated,
+  mostly retained, all for a documented reason.** `engine.py` has one
+  severity and one `ai_confidence` value per check. Four checks already
+  compute their severity from pack data — `access_denial`,
+  `camera_obstruction`, and `slow_response` pick from
+  `analysis.thresholds`-driven bands, and `unmatched_payment` already
+  reads `analysis.financial.severity_bands` /
+  `default_severity` — so the only thing those four still hardcoded was
+  the severity *label* strings; this pack now supplies those labels via
+  `vocabularies.severities` and the checks reference them by key. Every
+  other severity, and every `ai_confidence` value on every check
+  including the four above, is a fixed literal in `engine.py` that this
+  pack does not migrate: `callback_storm` (moderate, 0.8),
+  `mute_obstruction` (moderate, 0.7), `premature_end` (moderate, 0.7),
+  `unviewed_message` (serious, 0.7), `generic_detection_rule`'s
+  `rule.severity or "moderate"` fallback (0.7), the five tier-2
+  text-pattern checks — `profanity` (serious, 0.85),
+  `threatening_language` (critical, 0.8), `disparaging_remarks`
+  (serious, 0.75), `custody_schedule_ref` (minor, 0.5),
+  `child_support_ref` (minor, 0.5) — and `unmatched_payment_summary`
+  (minor, no `ai_confidence`). `outside_ofw` (serious, 0.85) is covered
+  by the phase-set reasoning above: the rule it belongs to is deleted in
+  FS-989, so its severity and confidence are not worth migrating either.
+  The reason for leaving the rest as literals: a fixed severity is a
+  deterministic-tier constant, not a real classifier score, and so is
+  every `ai_confidence` value on every check — none of them come from an
+  actual AI confidence measurement. FS-989's engine rebuild is likely to
+  redesign how these are assigned rather than just relocate today's
+  numbers into the pack, so migrating them now risks guessing at a
+  schema FS-989 has not defined yet and causing pack churn when it
+  lands.
+- **The jurisdiction-name ban became data, not an internal read, and
+  this ADR now records the required `severities` vocabulary it had been
+  missing.** `_validate_prompt` refuses a `prompt.system`/`prompt.user`
+  string that hardcodes a US state or DC name, the same way it already refused a
+  hardcoded practice-area label — both checks now run off a set the
+  caller passes in (`known_practice_area_labels`, `jurisdiction_names`),
+  never off a hardcoded literal or a read `validate_analysis_section`
+  performs itself. The 50 state names plus "District of Columbia" live in
+  `data/jurisdictions.json`, a packs-owned file, not a call into
+  state-law-api's jurisdiction registry. That's a deliberate trade-off,
+  not an oversight: the validator has to stay dependency-free and
+  callable at publish time with no network access, and state-law-api's
+  registry is a network call away. The cost is that this file only knows
+  US states and DC — a new jurisdiction, or a non-US one, means editing
+  `data/jurisdictions.json` by hand, not registering it somewhere and
+  having every consumer pick it up. A future change that wants a richer
+  source just needs to build a different `jurisdiction_names` value and
+  pass it into `validate_analysis_section` — the function does not care
+  where the set came from. Separately, and unrelated to the jurisdiction
+  ban: `financial.severity_bands[].severity` and
+  `financial.default_severity` must reference a key declared in
+  `vocabularies.severities`, a required vocabulary — this was already
+  enforced in code before this fix round; it just was not written down
+  here.
+- **The `outside_ofw` template key is renamed `communication_channel`.**
+  `outside_ofw` named one specific, hardcoded tier-one rule
+  ("is this message on the mandated platform"). FS-989 replaces that
+  hardcoded rule with a generic detection condition type,
+  `communication_channel`, that the engine dispatches to the same way it
+  dispatches to any other rule — so the template key now names the
+  condition type, not the old rule's specific implementation.
+  `legal_domain.order_provision_types`' `communication_channel` entry
+  (label: "Communication channel other than the mandated platform") was
+  renamed to match.
+
