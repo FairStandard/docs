@@ -1,55 +1,47 @@
-# Mintlify Starter Kit
+# FairStandard docs
 
-Use the starter kit to get your docs deployed and ready to customize.
+The FairStandard docs site, hosted on Mintlify at developers.fairstandard.com. Login required.
 
-Click the green **Use this template** button at the top of this repo to copy the Mintlify starter kit. The starter kit contains examples with
+Two tabs: **Platform Overview** (the product guide, written by people) and **API Documentation** (one group per service, generated from the service repos three times a day).
 
-- Guide pages
-- Navigation
-- Customizations
-- API reference pages
-- Use of popular components
+## What is in here
 
-**[Follow the full quickstart guide](https://starter.mintlify.com/quickstart)**
+| Path | What it is | Who writes it |
+| --- | --- | --- |
+| `introduction.mdx`, `concepts/`, `case-management/`, `learning-center/`, `marketplace/`, `attorneys/`, … | Platform Overview tab | People |
+| `how-this-site-is-built.mdx` | About page in the API Documentation tab | People |
+| `services/<repo>/index.mdx` | The repo's `README.md` | The build |
+| `services/<repo>/domain-model.mdx` | The repo's `CONTEXT.md` | The build |
+| `services/<repo>/decisions/*.mdx` | The repo's `docs/adr/*.md` | The build |
+| `openapi/<repo>.json` | The OpenAPI document the running app produces | The build |
+| `docs.json` | Site config. The service groups in the API Documentation tab are regenerated; the rest is hand-kept | Both |
 
-## AI-assisted writing
+Everything under `services/` and `openapi/` is overwritten three times a day. To change one of those pages, change the source file in the service repo.
 
-Set up your AI coding tool to work with Mintlify:
+## How the build works
+
+A launchd job on the FairStandard build machine (`com.fairstandard.docs-site-build`, 04:30, 12:30, 20:30) runs `~/.claude/docs-site-build/run.sh`. It pulls each service repo's `main`, exports the OpenAPI spec, converts the markdown to MDX, runs `mint validate` and `mint broken-links`, has a reviewer model read the change summary, and pushes to `main`. Mintlify deploys on push. A change the reviewer holds lands on a `docs/<stamp>` branch as a draft PR with a Linear issue.
+
+The full spec is `workflows/docs-site-build.md` in the repositories checkout.
+
+## Working on it locally
 
 ```bash
-npx skills add https://mintlify.com/docs
-```
-
-This command installs Mintlify's documentation skill for your configured AI tools like Claude Code, Cursor, Windsurf, and others. The skill includes component reference, writing standards, and workflow guidance.
-
-See the [AI tools guides](/ai-tools) for tool-specific setup.
-
-## Development
-
-Install the [Mintlify CLI](https://www.npmjs.com/package/mint) to preview your documentation changes locally. To install, use the following command:
-
-```
 npm i -g mint
+export PATH=/opt/homebrew/opt/node@22/bin:$PATH   # mint refuses Node 25+
+mint dev                                          # preview at localhost:3000
+mint validate && mint broken-links
 ```
 
-Run the following command at the root of your documentation, where your `docs.json` is located:
+To regenerate the service pages by hand without pushing:
 
+```bash
+/bin/bash ~/.claude/docs-site-build/run.sh --dry-run
 ```
-mint dev
+
+Tests for the build live next to it:
+
+```bash
+python3 -m pytest ~/.claude/docs-site-build/ -q
+/bin/bash ~/.claude/docs-site-build/test.sh
 ```
-
-View your local preview at `http://localhost:3000`.
-
-## Publishing changes
-
-Install our GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app) to propagate changes from your repo to your deployment. Changes are deployed to production automatically after pushing to the default branch.
-
-## Need help?
-
-### Troubleshooting
-
-- If your dev environment isn't running: Run `mint update` to ensure you have the most recent version of the CLI.
-- If a page loads as a 404: Make sure you are running in a folder with a valid `docs.json`.
-
-### Resources
-- [Mintlify documentation](https://mintlify.com/docs)
