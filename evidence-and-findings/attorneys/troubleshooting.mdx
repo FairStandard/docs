@@ -1,0 +1,54 @@
+---
+title: 'Troubleshoot evidence and findings'
+description: 'Fixes for the most common problems with documents, the findings matrix, discovery completeness, and reports.'
+kind: 'troubleshooting'
+audience: 'attorneys'
+section: 'evidence-and-findings'
+sidebarTitle: 'Troubleshooting'
+advice: true
+---
+
+Most problems here come down to a record that hasn't finished processing yet, a capability the case hasn't been enabled for, or a <span className="kw">missing</span> status that reflects the actual state of discovery rather than an error. The list below covers the ones people run into most.
+
+<AccordionGroup>
+  <Accordion title="A document isn't showing up in Documents">
+    Analysis needs time to read and connect a record after it's added; most process within a few minutes. If it's been longer, confirm the upload actually completed rather than assuming it will appear on its own.
+  </Accordion>
+  <Accordion title="I don't see findings, patterns, or discovery completeness on a case">
+    All three are enabled per case rather than for the whole firm. If one is missing from Case Detail, the case hasn't been enabled for that capability yet — that's a fact about the case's setup, not an error.
+  </Accordion>
+  <Accordion title="A finding's confidence score seems too low or too high">
+    Open the source records the finding lists and check them against the stated attribution and any attached defense — a finding is only as reliable as the records it drew from. If the score still looks wrong after reviewing the source, flag it in the review queue so it gets a decision rather than staying unresolved.
+  </Accordion>
+  <Accordion title="A discovery item's status hasn't changed even though something arrived">
+    A discovery item only updates when it's logged against the specific request it answers. If something came in outside the normal exchange, add it as a record and note the request it responds to so it can be matched to the right item.
+  </Accordion>
+  <Accordion title="A recording has the wrong speaker labels">
+    Open the recording and correct the labels directly. The measured trends built from a recording keep improving as more recordings are confirmed, so a correction here also improves accuracy on later analysis.
+  </Accordion>
+  <Accordion title="A report doesn't include a record added after it was generated">
+    A report reflects the case at the moment it was generated. Generate a new one to include anything added since — an existing report doesn't update on its own.
+  </Accordion>
+  <Accordion title="I set a document to hidden or sealed, but I can still see it">
+    Visibility settings restrict who can see a document; they don't change your own view. Sign in as, or ask, the party the setting is meant to restrict if you need to confirm it's actually hidden from them.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, contact [support@fairstandard.com](mailto:support@fairstandard.com) with the case name, the organization it's under, and a description of what you expected to see. Support can look at the case record directly rather than guessing from a description alone.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Evidence and findings overview" icon="folder-search" href="/evidence-and-findings/attorneys/overview">
+    See the full picture of what this section covers.
+  </Card>
+  <Card title="Get started with evidence and findings" icon="rocket" href="/evidence-and-findings/attorneys/get-started">
+    Find your way around Documents, findings, discovery completeness, and Reports.
+  </Card>
+</Columns>

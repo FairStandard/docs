@@ -18,3 +18,10 @@ h1 em, h2 em {
   font-style: italic;
   color: rgb(var(--primary));
 }
+
+/* The signature word: one word per page, italic, in the exact blue of the "r" in the
+   Vero wordmark (#2178c3 in logo/light.svg and logo/dark.svg). Dark mode lifts it to the
+   design system's dark accent so it still reads on navy. Used as <span className="kw">. */
+:root { --vero-kw: #2178c3; }
+.dark { --vero-kw: #82b7ef; }
+.kw { font-style: italic; color: var(--vero-kw); }

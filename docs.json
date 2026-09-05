@@ -86,6 +86,19 @@
                   "evidence-and-findings/litigants/you-think-the-other-side-is-holding-something-back",
                   "evidence-and-findings/litigants/troubleshooting"
                 ]
+              },
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "evidence-and-findings/attorneys/overview",
+                  "evidence-and-findings/attorneys/get-started",
+                  "evidence-and-findings/attorneys/work-the-findings-review-queue",
+                  "evidence-and-findings/attorneys/track-discovery-completeness-for-a-request-set",
+                  "evidence-and-findings/attorneys/manage-document-visibility-for-sealed-records",
+                  "evidence-and-findings/attorneys/how-findings-and-patterns-work",
+                  "evidence-and-findings/attorneys/opposing-counsel-says-discovery-is-complete",
+                  "evidence-and-findings/attorneys/troubleshooting"
+                ]
               }
             ]
           },

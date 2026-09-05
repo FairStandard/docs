@@ -36,6 +36,7 @@ The voice is the Vero design system's (`~/.claude/skills/fairstandard-design/rea
 - Limits are stated as facts, with the reason. Empty states reassure; never celebratory.
 - Never emoji, exclamation marks, "oops", marketing verbs, or anything that reads as legal advice. A public page that touches legal process carries "Vero explains legal process. It does not give legal advice."
 - Em dash for the aside, middot for the metadata join, curly quotes for anything a human said.
+- One signature word per page: exactly one word in the opening paragraph wrapped as `<span className="kw">word</span>`, italic and in the wordmark blue. The word that carries the page's idea, never a phrase, never decoration.
 - One idea per sentence. High-school reading level. Bold for UI elements, code formatting for file names, commands, paths, and code.
 
 ## Content boundaries

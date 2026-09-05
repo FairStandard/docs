@@ -315,7 +315,14 @@
       "attorneys"
     ],
     "service_name_pattern": "\\b[a-z]+(?:-[a-z]+)*-api\\b|\\bservicekit\\b",
-    "advice_line_required_when": "frontmatter advice: true, or the section has advice_required, or the page is about what a court does"
+    "advice_line_required_when": "frontmatter advice: true, or the section has advice_required, or the page is about what a court does",
+    "keyword": {
+      "class": "kw",
+      "per_page": 1,
+      "where": "the opening paragraph, or the first heading when the opening has no single word that carries the page",
+      "why": "the same device as the italic blue r in the Vero wordmark: the one word that carries the idea of the page, never decoration",
+      "markup": "<span className=\"kw\">word</span>"
+    }
   },
   "landing": {
     "file": "index",
