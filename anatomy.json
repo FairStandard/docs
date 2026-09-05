@@ -1,0 +1,335 @@
+{
+  "version": 1,
+  "site": {
+    "company": "FairStandard",
+    "product": "Vero",
+    "advice_line": "Vero explains legal process. It does not give legal advice."
+  },
+  "audiences": {
+    "litigants": {
+      "folder": "litigants",
+      "register": "guided",
+      "tab": "Platform Overview",
+      "reader": "a person with a case, represented or self-represented",
+      "voice": "second person, plain words, the same facts, no advice, court terms get a plain label and still show the code"
+    },
+    "attorneys": {
+      "folder": "attorneys",
+      "register": "guided-court",
+      "tab": "Platform Overview",
+      "reader": "an attorney, firm owner, or staff member",
+      "voice": "second person, plain sentences, court vocabulary and docket codes untranslated, no advice"
+    },
+    "developers": {
+      "folder": "developers",
+      "register": "professional",
+      "tab": "API Documentation",
+      "reader": "an engineer building against Vero",
+      "voice": "third person for the system, second person for the reader, service names and endpoint paths allowed, links into the generated API reference"
+    }
+  },
+  "sections": [
+    {
+      "slug": "your-case",
+      "name": "Your case",
+      "screens": [
+        "Cases",
+        "Case Detail",
+        "Dashboard"
+      ],
+      "capabilities": [
+        "cap.case-tracking",
+        "cap.timeline",
+        "cap.docket",
+        "cap.waiting-on",
+        "cap.review-tracking",
+        "cap.order-analysis",
+        "cap.flag-for-review",
+        "cap.witness-links",
+        "cap.estimation",
+        "cap.dashboard"
+      ],
+      "audiences": [
+        "litigants",
+        "attorneys",
+        "developers"
+      ],
+      "status": "planned"
+    },
+    {
+      "slug": "evidence-and-findings",
+      "name": "Evidence and findings",
+      "screens": [
+        "Documents",
+        "Case Detail",
+        "Reports"
+      ],
+      "capabilities": [
+        "cap.documents",
+        "cap.docs-by-event",
+        "cap.records",
+        "cap.findings",
+        "cap.patterns",
+        "cap.discovery-completeness",
+        "cap.emotion-measurement",
+        "cap.speaker-learning",
+        "cap.reports"
+      ],
+      "audiences": [
+        "litigants",
+        "attorneys",
+        "developers"
+      ],
+      "status": "planned"
+    },
+    {
+      "slug": "deadlines-and-next-steps",
+      "name": "Deadlines and next steps",
+      "screens": [
+        "Calendar",
+        "Next Steps"
+      ],
+      "capabilities": [
+        "cap.calendar",
+        "cap.deadlines",
+        "cap.next-steps",
+        "cap.court-prep",
+        "cap.filing"
+      ],
+      "audiences": [
+        "litigants",
+        "attorneys",
+        "developers"
+      ],
+      "status": "planned"
+    },
+    {
+      "slug": "messages",
+      "name": "Messages",
+      "screens": [
+        "Messages"
+      ],
+      "capabilities": [
+        "cap.messaging",
+        "cap.notifications",
+        "cap.cooperation"
+      ],
+      "audiences": [
+        "litigants",
+        "attorneys",
+        "developers"
+      ],
+      "status": "planned"
+    },
+    {
+      "slug": "learning-center",
+      "name": "Learning Center",
+      "screens": [
+        "Learning Center"
+      ],
+      "capabilities": [
+        "cap.learning"
+      ],
+      "audiences": [
+        "litigants",
+        "attorneys",
+        "developers"
+      ],
+      "advice_required": true,
+      "status": "planned"
+    },
+    {
+      "slug": "marketplace",
+      "name": "Marketplace",
+      "screens": [
+        "Marketplace"
+      ],
+      "capabilities": [
+        "cap.marketplace",
+        "cap.consultations"
+      ],
+      "audiences": [
+        "litigants",
+        "attorneys",
+        "developers"
+      ],
+      "status": "planned"
+    },
+    {
+      "slug": "your-firm",
+      "name": "Your firm",
+      "screens": [
+        "Clients",
+        "Admin",
+        "Reports"
+      ],
+      "capabilities": [
+        "cap.clients",
+        "cap.invitations",
+        "cap.retainer",
+        "cap.org-admin",
+        "cap.identity",
+        "cap.time-capture",
+        "cap.client-invoicing",
+        "cap.accounting-sync"
+      ],
+      "audiences": [
+        "attorneys",
+        "developers"
+      ],
+      "status": "planned"
+    }
+  ],
+  "kinds": {
+    "overview": {
+      "title": "<Section> overview",
+      "min_words": 300,
+      "max_words": 700,
+      "headings": [
+        "How it works",
+        "What you can do here"
+      ],
+      "optional_headings": [
+        "Who sees what",
+        "Availability"
+      ],
+      "ending": "Next steps",
+      "ending_component": "Columns",
+      "required_per_section": 1,
+      "file": "overview"
+    },
+    "get-started": {
+      "title": "Get started with <section>",
+      "min_words": 300,
+      "max_words": 1200,
+      "headings": [
+        "What you'll learn",
+        "Before you begin"
+      ],
+      "step_headings": true,
+      "optional_headings": [
+        "Tips",
+        "Troubleshooting"
+      ],
+      "ending": "Related topics",
+      "ending_component": "Columns",
+      "required_per_section": 1,
+      "file": "get-started"
+    },
+    "how-to": {
+      "title": "Verb first: Upload a court order",
+      "min_words": 200,
+      "max_words": 1200,
+      "headings": [],
+      "numbered_steps": true,
+      "optional_headings": [
+        "Before you begin",
+        "What happens next"
+      ],
+      "ending": "Related topics",
+      "ending_component": "Columns",
+      "min_per_section": 2
+    },
+    "concept": {
+      "title": "How <thing> works, or the noun itself",
+      "min_words": 300,
+      "max_words": 700,
+      "headings": [],
+      "min_h2": 2,
+      "max_h2": 4,
+      "ending": "Related topics",
+      "ending_component": "Columns",
+      "min_per_section": 1
+    },
+    "use-case": {
+      "title": "The reader's situation: Your hearing is in two weeks",
+      "min_words": 200,
+      "max_words": 900,
+      "headings": [
+        "What to do",
+        "What Vero does for you"
+      ],
+      "ending": "Related topics",
+      "ending_component": "Columns",
+      "min_per_section": 1
+    },
+    "troubleshooting": {
+      "title": "Troubleshoot <section>",
+      "min_words": 150,
+      "max_words": 1200,
+      "headings": [
+        "Still stuck"
+      ],
+      "accordion": true,
+      "ending": "Related topics",
+      "ending_component": "Columns",
+      "required_per_section": 1,
+      "file": "troubleshooting"
+    }
+  },
+  "frontmatter": {
+    "required": [
+      "title",
+      "description",
+      "kind",
+      "audience",
+      "section"
+    ],
+    "optional": [
+      "advice",
+      "sidebarTitle"
+    ],
+    "description_max_chars": 160
+  },
+  "rules": {
+    "title_case": "sentence, except product nouns",
+    "product_nouns": [
+      "Vero",
+      "FairStandard",
+      "Case",
+      "Deadline",
+      "Record",
+      "Finding",
+      "Phase",
+      "Records Index",
+      "Learning Center",
+      "Marketplace",
+      "Next Steps"
+    ],
+    "opening": "the first body element is a prose paragraph",
+    "forbidden_in_prose": [
+      "!",
+      "oops",
+      "Whoops",
+      "seamless",
+      "powerful",
+      "robust",
+      "cutting-edge",
+      "leverage",
+      "unlock",
+      "supercharge"
+    ],
+    "images": false,
+    "service_names_forbidden_for": [
+      "litigants",
+      "attorneys"
+    ],
+    "service_name_pattern": "\\b[a-z]+(?:-[a-z]+)*-api\\b|\\bservicekit\\b",
+    "advice_line_required_when": "frontmatter advice: true, or the section has advice_required, or the page is about what a court does"
+  },
+  "landing": {
+    "file": "index",
+    "parts": [
+      "eyebrow",
+      "What do you want to do with Vero? task chips",
+      "one card per section with one CTA verb",
+      "Which one do you need? rows in the reader's words",
+      "Create an account: three steps"
+    ]
+  },
+  "section_status": {
+    "planned": "not started; the check skips it",
+    "writing": "pages are checked, completeness is not",
+    "live": "everything is checked"
+  }
+}

@@ -9,6 +9,9 @@ Two tabs: **Platform Overview** (the product guide, written by people) and **API
 | Path | What it is | Who writes it |
 | --- | --- | --- |
 | `introduction.mdx`, `concepts/`, `case-management/`, `learning-center/`, `marketplace/`, `attorneys/`, … | Platform Overview tab | People |
+| `<section>/litigants/*.mdx`, `<section>/attorneys/*.mdx` | Platform Overview tab, one folder per reader per surface | People, to `anatomy.json` |
+| `<section>/developers/*.mdx` | Developer guides in the API Documentation tab | People, to `anatomy.json` |
+| `anatomy.json` | The sections, audiences, page kinds, and rules the hand-written pages follow | People |
 | `how-this-site-is-built.mdx` | About page in the API Documentation tab | People |
 | `services/<repo>/index.mdx` | The repo's `README.md` | The build |
 | `services/<repo>/domain-model.mdx` | The repo's `CONTEXT.md` | The build |
@@ -20,7 +23,7 @@ Everything under `services/` and `openapi/` is overwritten three times a day. To
 
 ## How the build works
 
-A launchd job on the FairStandard build machine (`com.fairstandard.docs-site-build`, 04:30, 12:30, 20:30) runs `~/.claude/docs-site-build/run.sh`. It pulls each service repo's `main`, exports the OpenAPI spec, converts the markdown to MDX, runs `mint validate` and `mint broken-links`, has a reviewer model read the change summary, and pushes to `main`. Mintlify deploys on push. A change the reviewer holds lands on a `docs/<stamp>` branch as a draft PR with a Linear issue.
+A launchd job on the FairStandard build machine (`com.fairstandard.docs-site-build`, 04:30, 12:30, 20:30) runs `~/.claude/docs-site-build/run.sh`. It pulls each service repo's `main`, exports the OpenAPI spec, converts the markdown to MDX, runs `mint validate`, `mint broken-links`, and the anatomy check, has a reviewer model read the change summary, and pushes to `main`. Mintlify deploys on push. A change the reviewer holds lands on a `docs/<stamp>` branch as a draft PR with a Linear issue.
 
 The full spec is `workflows/docs-site-build.md` in the repositories checkout.
 

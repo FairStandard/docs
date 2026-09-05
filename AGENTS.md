@@ -7,11 +7,15 @@
 - Two tabs. **Platform Overview** is written by people. **API Documentation** is generated per service. Read `README.md` before editing anything.
 - Use the Mintlify MCP server, `https://mcp.mintlify.com`, to edit content and settings via MCP, and the Mintlify docs MCP server, `https://www.mintlify.com/docs/mcp`, for Mintlify questions.
 
+## How the site is laid out
+
+`anatomy.json` at the repo root is the single source of truth for the hand-written part of the site: the seven sections (one per product surface), the three audiences (litigants, attorneys, developers) and their registers, the six page kinds with their required parts and length bounds, and the frontmatter every page carries. Pages live at `<section>/<audience>/<page>.mdx`. Litigant and attorney folders are navigation on the Platform Overview tab; developer folders are hand-written groups on the API Documentation tab. The build runs `check_anatomy.py` against `anatomy.json` with its other validators, so a page that breaks the anatomy blocks the build until it is fixed. Read `anatomy.json` before writing or editing any page.
+
 ## Do not edit generated pages
 
 Everything under `services/` and `openapi/`, and the service groups in the `API Documentation` tab of `docs.json`, is regenerated three times a day from the service repos by `~/.claude/docs-site-build/run.sh`. Edits there are overwritten. Fix the source file in the service repo (`README.md`, `CONTEXT.md`, `docs/adr/*.md`, or the FastAPI app) instead.
 
-Hand-written: every Platform Overview page, `how-this-site-is-built.mdx`, and the rest of `docs.json`.
+Hand-written: every page under `<section>/<audience>/`, `how-this-site-is-built.mdx`, `anatomy.json`, and the rest of `docs.json`.
 
 ## Names
 
