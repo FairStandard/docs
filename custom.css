@@ -1,0 +1,20 @@
+/* Vero brand layer for the docs site. Colours and fonts come from docs.json;
+   this file only adds the code face and the brand's hairline rules. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-var-latin.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+code, pre, kbd, samp, .font-mono {
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+h1, h2, h3 {
+  letter-spacing: -0.005em;
+}
+h1 em, h2 em {
+  font-style: italic;
+  color: rgb(var(--primary));
+}

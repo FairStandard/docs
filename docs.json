@@ -1,16 +1,17 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "almond",
-  "name": "FairStandard",
+  "name": "Vero",
   "colors": {
-    "primary": "#ef7025",
-    "light": "#eec9bc",
-    "dark": "#4fa1ab"
+    "primary": "#2178c3",
+    "light": "#82b7ef",
+    "dark": "#005ea1"
   },
   "favicon": "/favicon.svg",
   "logo": {
     "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "dark": "/logo/dark.svg",
+    "href": "https://developers.fairstandard.com"
   },
   "navbar": {
     "links": [
@@ -21,7 +22,7 @@
     ],
     "primary": {
       "type": "button",
-      "label": "Get Started",
+      "label": "Open Vero",
       "href": "https://app.fairstandard.com"
     }
   },
@@ -31,7 +32,7 @@
         "tab": "Platform Overview",
         "groups": [
           {
-            "group": "Get Started",
+            "group": "Get started",
             "pages": [
               "introduction",
               "who-its-for",
@@ -39,7 +40,7 @@
             ]
           },
           {
-            "group": "Core Concepts",
+            "group": "Core concepts",
             "pages": [
               "concepts/case-workspace",
               "concepts/law-assembly-engine",
@@ -48,7 +49,7 @@
             ]
           },
           {
-            "group": "Case Management",
+            "group": "Case management",
             "pages": [
               "case-management/creating-a-case",
               "case-management/uploading-evidence",
@@ -57,7 +58,7 @@
             ]
           },
           {
-            "group": "Learning Center",
+            "group": "Learning center",
             "pages": [
               "learning-center/overview",
               "learning-center/understanding-family-law",
@@ -78,7 +79,7 @@
         "tab": "For Attorneys",
         "groups": [
           {
-            "group": "Attorney Guide",
+            "group": "Attorney guide",
             "pages": [
               "attorneys/overview",
               "attorneys/managing-clients",
@@ -565,6 +566,26 @@
     ]
   },
   "footer": {
-    "socials": {}
+    "socials": {
+      "github": "https://github.com/FairStandard"
+    }
+  },
+  "background": {
+    "color": {
+      "light": "#f6f8fc",
+      "dark": "#0d1521"
+    }
+  },
+  "fonts": {
+    "heading": {
+      "family": "EB Garamond",
+      "weight": 500
+    },
+    "body": {
+      "family": "Nunito Sans",
+      "source": "/fonts/nunito-sans-var-latin.woff2",
+      "format": "woff2",
+      "weight": 400
+    }
   }
 }
