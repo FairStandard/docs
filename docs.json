@@ -103,6 +103,25 @@
             ]
           },
           {
+            "group": "Deadlines and next steps",
+            "pages": [
+              {
+                "group": "Litigants",
+                "pages": [
+                  "deadlines-and-next-steps/litigants/overview",
+                  "deadlines-and-next-steps/litigants/get-started",
+                  "deadlines-and-next-steps/litigants/check-your-calendar-for-upcoming-court-dates",
+                  "deadlines-and-next-steps/litigants/set-a-reminder-for-a-deadline",
+                  "deadlines-and-next-steps/litigants/complete-a-court-prep-task",
+                  "deadlines-and-next-steps/litigants/work-on-a-filing-for-your-case",
+                  "deadlines-and-next-steps/litigants/how-deadlines-and-next-steps-work-together",
+                  "deadlines-and-next-steps/litigants/your-hearing-is-in-two-weeks",
+                  "deadlines-and-next-steps/litigants/troubleshooting"
+                ]
+              }
+            ]
+          },
+          {
             "group": "Core concepts",
             "pages": [
               "concepts/law-assembly-engine",
@@ -112,7 +131,6 @@
           {
             "group": "Case management",
             "pages": [
-              "case-management/deadlines-and-next-steps",
               "case-management/messaging"
             ]
           },
@@ -693,6 +711,10 @@
     {
       "source": "/case-management/uploading-evidence",
       "destination": "/evidence-and-findings/litigants/add-a-record-to-your-case"
+    },
+    {
+      "source": "/case-management/deadlines-and-next-steps",
+      "destination": "/deadlines-and-next-steps/litigants/overview"
     }
   ]
 }
