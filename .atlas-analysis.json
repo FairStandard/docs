@@ -1,30 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
+  "projectType": "saas",
+  "projectName": "FairStandard",
+  "projectDescription": "FairStandard is an end-to-end legal case platform for the whole legal industry—starting with family law—where litigants, attorneys, and legal service providers can learn the process, organize evidence, find help, and run a case from intake to filing.",
   "theme": "almond",
-  "name": "FairStandard",
-  "colors": {
-    "primary": "#ef7025",
-    "light": "#eec9bc",
-    "dark": "#4fa1ab"
-  },
-  "favicon": "/favicon.svg",
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:support@fairstandard.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Get Started",
-      "href": "https://app.fairstandard.com"
-    }
-  },
+  "primaryColor": "#ef7025",
+  "lightColor": "#eec9bc",
+  "darkColor": "#4fa1ab",
   "navigation": {
     "tabs": [
       {
@@ -90,7 +71,23 @@
       }
     ]
   },
-  "footer": {
-    "socials": {}
-  }
+  "keyFeatures": [
+    "Automated law assembly — aggregates all applicable statutes, rules, and case law for a specific case",
+    "End-to-end case workspace shared by litigant and attorney",
+    "Unified evidence intake — recordings, texts, court orders, financial documents",
+    "AI-powered pattern detection — identifies behavior patterns, hidden assets, and order violations",
+    "Learning Center — procedural and legal education for both litigants and attorneys",
+    "Marketplace — searchable directory of attorneys, notaries, evaluators, and mediators",
+    "Deadline and next-step tracking to prevent procedural losses",
+    "Equal feature access regardless of representation status"
+  ],
+  "publicApiSurface": [
+    "Case creation and management",
+    "Evidence upload and organization",
+    "Law assembly engine queries",
+    "Deadline and next-step tracking",
+    "Learning Center content",
+    "Marketplace search and listings",
+    "Messaging between litigants and attorneys"
+  ]
 }
