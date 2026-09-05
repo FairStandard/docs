@@ -71,17 +71,34 @@
             ]
           },
           {
+            "group": "Evidence and findings",
+            "pages": [
+              {
+                "group": "Litigants",
+                "pages": [
+                  "evidence-and-findings/litigants/overview",
+                  "evidence-and-findings/litigants/get-started",
+                  "evidence-and-findings/litigants/add-a-record-to-your-case",
+                  "evidence-and-findings/litigants/confirm-who-is-speaking-in-a-recording",
+                  "evidence-and-findings/litigants/get-a-report-about-your-case",
+                  "evidence-and-findings/litigants/how-findings-work",
+                  "evidence-and-findings/litigants/how-your-records-are-organized",
+                  "evidence-and-findings/litigants/you-think-the-other-side-is-holding-something-back",
+                  "evidence-and-findings/litigants/troubleshooting"
+                ]
+              }
+            ]
+          },
+          {
             "group": "Core concepts",
             "pages": [
               "concepts/law-assembly-engine",
-              "concepts/evidence-intake",
               "concepts/roles"
             ]
           },
           {
             "group": "Case management",
             "pages": [
-              "case-management/uploading-evidence",
               "case-management/deadlines-and-next-steps",
               "case-management/messaging"
             ]
@@ -643,6 +660,14 @@
     {
       "source": "/concepts/case-workspace",
       "destination": "/your-case/litigants/how-your-case-page-is-organized"
+    },
+    {
+      "source": "/concepts/evidence-intake",
+      "destination": "/evidence-and-findings/litigants/overview"
+    },
+    {
+      "source": "/case-management/uploading-evidence",
+      "destination": "/evidence-and-findings/litigants/add-a-record-to-your-case"
     }
   ]
 }
