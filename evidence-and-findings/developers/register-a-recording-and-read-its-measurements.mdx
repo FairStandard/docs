@@ -1,0 +1,77 @@
+---
+title: 'Register a recording and read its measurements'
+description: "Register a recording on media-api, recover a queue_failed row, and read its transcript, timeline, and deviations from a speaker's baseline."
+kind: 'how-to'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'Register a recording'
+---
+
+`media-api` measures a Recording only after you register it — nothing on that service watches `evidence-api` for new audio on its own. This walks through registering one, recovering it if it fails to queue, and reading back what its measurement pass produced, including how it compares to the speaker's own <span className="kw">baseline</span>.
+
+## Before you begin
+
+You need the recording's `content_hash` and its `evidence_file_key` — both come back from the file's delivery through `intake-api`, or from `evidence-api`'s presigned upload door if you stored the file yourself.
+
+1. Register the recording.
+
+   ```bash
+   curl -X POST https://media-api.internal.fairstandard.com/internal/recordings \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "case_id": "'"$CASE_ID"'",
+       "content_hash": "'"$CONTENT_HASH"'",
+       "source_type": "voicemail",
+       "evidence_file_key": "'"$FILE_KEY"'",
+       "duration_seconds": 94.5
+     }'
+   ```
+
+   Registration deduplicates by content hash — sending the same hash twice in one workspace returns the existing row rather than starting a second measurement pass. A successful registration enqueues the recording immediately; its `status` starts at `received`.
+
+2. Poll for measurement to finish.
+
+   ```bash
+   curl https://media-api.internal.fairstandard.com/internal/recordings/$RECORDING_ID \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   `status` moves from `received` to `measured` once the pipeline's measure stage completes, or to `failed` with an `error` field naming what went wrong. If the initial registration call could not queue the job at all, `status` comes back as `queue_failed` on the very first read — that recording was never stranded silently.
+
+3. Recover a `queue_failed` recording, if you see one.
+
+   ```bash
+   curl -X POST https://media-api.internal.fairstandard.com/internal/recordings/$RECORDING_ID/requeue \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   This re-submits the same recording and marks it `received` again. It answers `409` if the recording is not currently `queue_failed` — do not call it speculatively on a recording that is already measuring or measured.
+
+4. Read the transcript, timeline, and deviations.
+
+   ```bash
+   curl https://media-api.internal.fairstandard.com/internal/recordings/$RECORDING_ID/transcript \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   curl https://media-api.internal.fairstandard.com/internal/recordings/$RECORDING_ID/timeline \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   curl https://media-api.internal.fairstandard.com/internal/recordings/$RECORDING_ID/deviations \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   The transcript carries ordered speaker segments plus a full-text form. The timeline is the recording's Measurements in order — emotion vectors and prosody, never a conclusion about the speaker. Deviations compares each speaker's observation on this recording against their own baseline; a speaker with fewer than three prior observations comes back empty for that speaker, because a baseline needs that many to be meaningful.
+
+## What happens next
+
+Nothing on `media-api` notifies another service when a recording finishes measuring — a consumer that needs to react to `measured` status polls for it, the same way this walkthrough did. A recording's baseline updates automatically as a side effect of each measured recording; there is no separate call to make for that. Speaker enrollment (naming an anonymous track) is a decision this build does not expose a door for yet — every speaker read back here is already resolved, not something you enroll through this API.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Get started with evidence and findings" icon="rocket" href="/evidence-and-findings/developers/get-started">
+    Register a recording as one step in the section's full walkthrough.
+  </Card>
+  <Card title="Deliver a file into a case's evidence" icon="upload" href="/evidence-and-findings/developers/deliver-a-file-into-a-cases-evidence">
+    Get the file and its evidence_file_key onto evidence-api before you register the recording.
+  </Card>
+</Columns>

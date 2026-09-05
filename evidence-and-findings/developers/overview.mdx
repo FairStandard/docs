@@ -1,0 +1,44 @@
+---
+title: 'Evidence and findings overview'
+description: 'What backs evidence and findings today: evidence-api, intake-api, media-api, what analysis-api owns with no generated reference yet, and what has no service.'
+kind: 'overview'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'Overview'
+---
+
+The evidence and findings section covers nine capabilities in the platform's canon register: the document center, browsing documents by court event, record capture, findings analysis, pattern analysis, discovery completeness, communication measurements, speaker identification, and reports. This page maps each one to what actually exists in this build today, so you know which door to call, which repo owns a door this site does not publish yet, and which capability has nothing behind it at all — the through line for all three is the <span className="kw">ledger</span> `evidence-api` keeps.
+
+## How it works
+
+`evidence-api` is the durable store: it owns `Record` (a call, message, or financial transaction), the file bytes behind a presigned upload or download, and a hash-chained audit trail that seals every write in order. Nothing here is ever updated or deleted — a correction is a new entry, the same way a court record works. See [evidence-api's overview](/services/evidence-api/index) and [domain model](/services/evidence-api/domain-model). It backs record capture directly, and it is the downstream every other door in this section eventually writes to or reads from.
+
+`intake-api` is the front door records take to reach it: start an import session, get a presigned upload URL, then hand the bytes to the ingest engine, which fingerprints, classifies, extracts (through `files-api`'s deterministic parsers, escalating to an AI reader only when validation fails), resolves parties, and delivers the result to `evidence-api`. See [intake-api's overview](/services/intake-api/index) and [domain model](/services/intake-api/domain-model). `files-api` itself has no store and no workspace scoping — it is a pure computation library over bytes a caller already owns, importable in-process or callable at `POST /v1/detect` and `POST /v1/extract`. See [files-api's overview](/services/files-api/index).
+
+`media-api` owns communication measurements and speaker identification: register a recording, and its pipeline diarizes, transcribes, and scores it into `Measurement` rows — an emotion vector plus prosody, never a conclusion about a person — while folding one observation per speaker into that speaker's versioned baseline. See [media-api's overview](/services/media-api/index) and [domain model](/services/media-api/domain-model).
+
+Findings and pattern analysis are real, tested endpoints in `analysis-api` — it owns `Finding`, pattern groups, and the tier-3 AI classifier that reads a record only after the deterministic rule tiers pass on it. This docs site does not yet carry a generated reference for that repo, so there is no `/services/analysis-api/` page to link to here; see this section's use case on building against it before that catches up. Discovery completeness, browsing documents by a court event, sealed or hidden document visibility, and reports have no backing service in this build at all — there is nothing to call for any of the four yet.
+
+## What you can do here
+
+- **Create a case's first record.** Presign an upload on `intake-api`, deliver the bytes through an import session, and read the resulting record back from `evidence-api`.
+- **List a case's records.** `GET /internal/cases/{case_id}/records` on `evidence-api`, filterable by `record_type` (`call`, `message`, or `financial_transaction`).
+- **Verify a case's audit chain.** `GET /internal/cases/{case_id}/audit/verify` on `evidence-api` recomputes every seal and names the first broken link, if any.
+- **Register a recording for measurement.** `POST /internal/recordings` on `media-api`, deduplicated by content hash.
+- **Read a recording's transcript, timeline, and deviations.** Three read doors on `media-api`, each scoped to one recording.
+- **Read a speaker's baseline.** `GET /internal/cases/{case_id}/speakers/{speaker_name}/baseline` on `media-api`.
+
+## Availability
+
+`entitlements-api`'s `resolve` door is what a case-scoped integration checks before it shows findings, patterns, discovery completeness, or communication measurements — all four are tiered and enabled per case, the same pattern [your case's capability gating](/your-case/developers/how-case-capabilities-are-gated-per-case) describes for order analysis and witness links. Record capture, the document center, and reports carry no per-case gate in the register; the gap for the last two is that no service implements them yet, not that access is restricted.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with evidence and findings" icon="rocket" href="/evidence-and-findings/developers/get-started">
+    Deliver a record through intake-api and register a recording on media-api.
+  </Card>
+  <Card title="How the evidence chain proves nothing was altered" icon="link" href="/evidence-and-findings/developers/how-the-evidence-chain-proves-nothing-was-altered">
+    The insert-only store and the hash-chained audit trail behind every record.
+  </Card>
+</Columns>

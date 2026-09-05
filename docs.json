@@ -170,6 +170,18 @@
             ]
           },
           {
+            "group": "Evidence and findings for developers",
+            "pages": [
+              "evidence-and-findings/developers/overview",
+              "evidence-and-findings/developers/get-started",
+              "evidence-and-findings/developers/deliver-a-file-into-a-cases-evidence",
+              "evidence-and-findings/developers/register-a-recording-and-read-its-measurements",
+              "evidence-and-findings/developers/how-the-evidence-chain-proves-nothing-was-altered",
+              "evidence-and-findings/developers/your-app-needs-findings-and-patterns",
+              "evidence-and-findings/developers/troubleshooting"
+            ]
+          },
+          {
             "group": "billing-payments-api",
             "pages": [
               "services/billing-payments-api/index",

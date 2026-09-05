@@ -1,0 +1,49 @@
+---
+title: 'Troubleshoot evidence and findings'
+description: 'Fixes for the errors integrations hit most often against evidence-api, intake-api, and media-api for this section.'
+kind: 'troubleshooting'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'Troubleshooting'
+---
+
+Most problems integrating with this section come down to treating a <span className="kw">duplicate</span> as an error, missing the `X-Workspace-Id` header, or asking a door for something no service in this build produces yet. The list below covers what comes up most.
+
+<AccordionGroup>
+  <Accordion title="Ingesting the same file twice returns status duplicate, not an error">
+    That's correct, not a failure. `intake-api` fingerprints every file by its bytes; a fingerprint that already delivered once in this workspace stops with `status: "duplicate"` and no new records are written. `evidence-api` enforces the same rule on its own side by content hash, so a duplicate cannot slip through even if you bypass intake and write records directly. Do not retry an ingest call expecting a different result — a duplicate answer means the evidence is already there.
+  </Accordion>
+  <Accordion title="Creating a financial_transaction record returns a 422">
+    `evidence-api` fences every record type's fields, not only the five financial ones. A `financial_transaction` record must carry `amount`, `direction`, and `account_ref` together, and may also carry `description` and `category` — but it may carry none of a call's or a message's own fields, such as `transcript` or `viewed_at`. The 422's message names the exact field that's missing or foreign; fix that field rather than retrying the same body.
+  </Accordion>
+  <Accordion title="A record, file, or recording from another workspace returns 404 instead of 403">
+    This is deliberate, not a bug, and it matches the same rule `case-api` and `entitlements-api` use. Every query on `evidence-api` and `media-api` filters by `workspace_id` before anything else — a row from another workspace does not surface as a permission error, because as far as the query is concerned, it does not exist. Confirm you're sending the `X-Workspace-Id` header that matches the workspace the resource was created under.
+  </Accordion>
+  <Accordion title="A recording is stuck at status queue_failed">
+    Registration marks a recording `queue_failed`, rather than stranding it silently at `received`, when the initial job submission could not be queued. Call `POST /internal/recordings/{recording_id}/requeue` to recover it — do not register the same content hash again, since that just returns the existing, still-failed row instead of starting over.
+  </Accordion>
+  <Accordion title="An import comes back needs_review instead of delivered">
+    This means the deterministic parser's extraction failed validation and the AI extraction tier still could not produce a result that matched what the document claims. `intake-api` never delivers an invalid extraction silently — read the outcome's `problems` list for what specifically did not check out, then ingest a corrected file as a new call rather than expecting this import to resolve on its own.
+  </Accordion>
+  <Accordion title="There's no endpoint for discovery completeness, browsing documents by court event, sealed or hidden document visibility, or reports">
+    That's accurate, not a documentation gap. No service in this build publishes any of those four doors yet. `evidence-api` covers record and file storage plus the audit chain; `media-api` covers communication measurements and speaker identification. See this section's overview for exactly what exists today.
+  </Accordion>
+  <Accordion title="There's no /services/analysis-api/ page to link to for findings or patterns">
+    `analysis-api` is a real, tested service — this docs site simply has no generated reference for it yet. See [your app needs findings and patterns](/evidence-and-findings/developers/your-app-needs-findings-and-patterns) for the doors it exposes today, sourced from the repo's own README and CONTEXT.md directly.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, check the service's own `docs/adr/` for a decision that names the behavior deliberately before assuming it's a defect, then contact support@fairstandard.com with the workspace ID, case ID, and the exact request you sent.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Evidence and findings overview" icon="package" href="/evidence-and-findings/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="How the evidence chain proves nothing was altered" icon="link" href="/evidence-and-findings/developers/how-the-evidence-chain-proves-nothing-was-altered">
+    Why evidence-api has no update or delete door at all.
+  </Card>
+</Columns>

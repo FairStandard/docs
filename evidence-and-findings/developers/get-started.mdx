@@ -1,0 +1,93 @@
+---
+title: 'Get started with evidence and findings'
+description: 'Deliver a file through intake-api into evidence-api, read the record back, and register a recording for measurement on media-api.'
+kind: 'get-started'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'Get started'
+---
+
+This guide takes you through the calls a client integrating with this section makes most: getting a file from a case into `evidence-api` by way of `intake-api`'s ingest <span className="kw">pipeline</span>, reading the resulting record back, and registering a recording on `media-api` so its transcript and measurements exist to read.
+
+## What you'll learn
+
+- How to start an import session and get a presigned upload URL
+- How to hand a file to the ingest pipeline and see what it delivered
+- How to read a case's records back from `evidence-api`
+- How to register a recording on `media-api` and read its status
+
+## Before you begin
+
+You need a workspace ID, a bearer token good for that workspace, and a case ID that already exists on `case-api`. Every call in this section is workspace-scoped by the `X-Workspace-Id` header, the same as `your-case`'s services — a row from another workspace never surfaces, not even as a 403.
+
+### Step 1: Start an import session
+
+```bash
+curl -X POST https://intake-api.internal.fairstandard.com/internal/import-sessions \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "'"$CASE_ID"'", "upload_method": "api"}'
+```
+
+The response carries the session's `id`. Every file you ingest in this session references it.
+
+### Step 2: Hand a file to the ingest pipeline
+
+```bash
+curl -X POST https://intake-api.internal.fairstandard.com/internal/import-sessions/$SESSION_ID/files \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -F "file=@call-history.csv" \
+  -F "actor=jordan@example.com"
+```
+
+The engine fingerprints the file, classifies what it is, extracts records through `files-api`'s deterministic parsers, validates the extraction, resolves parties against the case's known people, and delivers the result to `evidence-api` — all in this one call. The response names how many records were saved and how many were duplicates of ones already delivered.
+
+### Step 3: Read the delivered records back
+
+```bash
+curl "https://evidence-api.internal.fairstandard.com/internal/cases/$CASE_ID/records?limit=25&offset=0" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+The response is a `Page`: `{items, total}`. Each record carries its own `content_hash` — two records with the same hash in the same workspace are the same record, and `evidence-api` never stores a duplicate twice.
+
+### Step 4: Register a recording for measurement
+
+A recording is a distinct path from a text or financial record — it goes to `media-api`, not through the ingest pipeline above, and it needs the evidence file's own key rather than its bytes:
+
+```bash
+curl -X POST https://media-api.internal.fairstandard.com/internal/recordings \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "case_id": "'"$CASE_ID"'",
+    "content_hash": "'"$CONTENT_HASH"'",
+    "source_type": "ofw_call",
+    "evidence_file_key": "'"$FILE_KEY"'"
+  }'
+```
+
+Registering a recording queues it for measurement immediately. Poll `GET /internal/recordings/{recording_id}` and watch `status` move from `received` toward `measured` — or `queue_failed`, which you recover from with `POST /internal/recordings/{recording_id}/requeue`, never by registering the same recording again.
+
+## Tips
+
+- `findings` and pattern analysis are real endpoints in `analysis-api`, but this docs site has no generated reference for that repo yet. See [your app needs findings and patterns](/evidence-and-findings/developers/your-app-needs-findings-and-patterns) before you design against it.
+- No service in this build publishes a door for discovery completeness, browsing documents by court event, sealed or hidden document visibility, or reports. Confirm a door exists in this section's [overview](/evidence-and-findings/developers/overview) before you build a UI that assumes one.
+- A recording's `source_type` is a plain string your integration chooses, not an enum `media-api` validates — use a value that matches how your own system already labels the recording's origin.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Evidence and findings overview" icon="package" href="/evidence-and-findings/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="Deliver a file into a case's evidence" icon="upload" href="/evidence-and-findings/developers/deliver-a-file-into-a-cases-evidence">
+    The same import walkthrough as a standalone how-to, with error handling.
+  </Card>
+  <Card title="Register a recording and read its measurements" icon="waveform" href="/evidence-and-findings/developers/register-a-recording-and-read-its-measurements">
+    Read a recording's transcript, timeline, and deviations after it measures.
+  </Card>
+  <Card title="Troubleshoot evidence and findings" icon="life-buoy" href="/evidence-and-findings/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

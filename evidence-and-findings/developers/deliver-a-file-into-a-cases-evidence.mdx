@@ -1,0 +1,65 @@
+---
+title: "Deliver a file into a case's evidence"
+description: 'Start an import session on intake-api, ingest a file through it, and handle the delivered, duplicate, needs_review, and failed outcomes.'
+kind: 'how-to'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'Deliver a file'
+---
+
+A file reaches `evidence-api` only by way of `intake-api`'s ingest engine — there is no door on `evidence-api` itself that accepts raw file bytes from outside the platform. This walks through the <span className="kw">ingest</span> call end to end, including the four outcomes it can return.
+
+## Before you begin
+
+You need a workspace ID with write access and a case ID that already exists on `case-api`. Start an import session first — every file you ingest belongs to one:
+
+```bash
+curl -X POST https://intake-api.internal.fairstandard.com/internal/import-sessions \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "'"$CASE_ID"'", "upload_method": "api"}'
+```
+
+1. Send the file to the ingest door.
+
+   ```bash
+   curl -X POST https://intake-api.internal.fairstandard.com/internal/import-sessions/$SESSION_ID/files \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -F "file=@ofw-messages.pdf" \
+     -F "actor=jordan@example.com" \
+     -F 'parties=[{"name": "Jordan Smith", "phones": ["4045551212"], "emails": []}]'
+   ```
+
+   `actor` is required — it names who is delivering the file, for the audit trail `evidence-api` writes on delivery. `parties`, if you send it, is a JSON array `intake-api` uses to resolve the names, phone numbers, and handles the document printed to the case's known parties; an unmatched value passes through unchanged rather than being invented.
+
+2. Read the outcome's `status`.
+
+   The response is an `IngestOutcome` with one of four values: `delivered` (records reached `evidence-api`; `records_delivered` says how many), `duplicate` (this file's fingerprint already delivered once in this workspace — nothing new was written), `needs_review` (extraction failed even after the AI extraction tier read the page; the import is flagged, never delivered silently), or `failed` (the file could not be classified or parsed at all).
+
+3. On `needs_review` or `failed`, read `problems`.
+
+   Both outcomes carry a `problems` list naming what went wrong — a record count mismatch against what the document claims, a missing required field, an unrecognized format. Surface these to whoever is reviewing the import; they describe the actual gap between the file and what a valid extraction requires, not a generic failure.
+
+4. Confirm delivery by reading the case's records.
+
+   ```bash
+   curl "https://evidence-api.internal.fairstandard.com/internal/cases/$CASE_ID/records?limit=25&offset=0" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   A `delivered` outcome's records are readable here immediately — `intake-api` does not return until `evidence-api` has accepted them.
+
+## What happens next
+
+A `delivered` outcome is final for that file: `evidence-api` never mutates a record once written, so re-ingesting the same bytes into the same workspace always answers `duplicate`, never a second copy. A `needs_review` import stays in that state until something outside this call resolves it — there is no door in this build that re-runs extraction on an existing import; you ingest the corrected file as a new call instead. Delivery does not register anything with `media-api` on its own — a recording still needs its own `POST /internal/recordings` call, even after the file that contains it lands in `evidence-api`.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Get started with evidence and findings" icon="rocket" href="/evidence-and-findings/developers/get-started">
+    The same ingest call in the section's full walkthrough.
+  </Card>
+  <Card title="Register a recording and read its measurements" icon="waveform" href="/evidence-and-findings/developers/register-a-recording-and-read-its-measurements">
+    What to do once a delivered file's recording needs measuring.
+  </Card>
+</Columns>

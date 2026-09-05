@@ -1,0 +1,33 @@
+---
+title: 'How the evidence chain proves nothing was altered'
+description: 'How evidence-api seals every write into a hash-chained audit trail, and what verifying that chain actually proves.'
+kind: 'concept'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'The evidence chain'
+---
+
+`evidence-api` has no update door and no delete door for records, files, or audit entries — that absence is deliberate, and the hash-<span className="kw">chain</span> it keeps instead is what makes the absence provable rather than just claimed.
+
+## An audit entry is a link, not a log line
+
+Each entry in the chain records what was done to which evidence, by whom, and when, then seals itself with the hash of the entry before it. That seal is what separates an audit entry from an ordinary log line: a log line can be edited or deleted without anything else noticing, but changing a sealed entry breaks the seal of every entry chained after it. `POST /internal/cases/{case_id}/audit` appends one entry; there is no corresponding update or delete door, matching the same insert-only rule that governs records and files.
+
+## Uploads and downloads both append; nothing else does
+
+An upload's audit entry is appended by `intake-api`, from outside `evidence-api`, because `intake-api` is the party that knows the upload actually happened. A download works the other way: `evidence-api` is the only party that knows a presigned URL was issued at all, so `GET /internal/cases/{case_id}/files/presign-download` appends the entry itself, before it hands back the URL, and fails the whole request if the append fails rather than issuing an unaudited URL. Read that action's name honestly — `"downloaded"` records that access was granted, not that the caller actually fetched the bytes with it, since a presigned URL can expire unused.
+
+## Verifying the chain finds the first bad link, not just that something's wrong
+
+`GET /internal/cases/{case_id}/audit/verify` recomputes every seal in order and reports `intact` as a boolean plus `first_broken_position` when it is not. A broken chain names exactly where it broke, which is what makes the guarantee useful in practice: a caller does not have to recompute anything themselves or guess which of possibly thousands of entries is the one in question. Nothing about verification is probabilistic — the same chain always verifies to the same result, because nothing in `evidence-api`'s write path can produce a chain any other way.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Deliver a file into a case's evidence" icon="upload" href="/evidence-and-findings/developers/deliver-a-file-into-a-cases-evidence">
+    The delivery call that produces the audit entries this chain seals.
+  </Card>
+  <Card title="Evidence and findings overview" icon="package" href="/evidence-and-findings/developers/overview">
+    What backs every capability in this section today.
+  </Card>
+</Columns>

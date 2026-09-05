@@ -1,0 +1,35 @@
+---
+title: 'Your app needs findings and patterns'
+description: 'analysis-api owns findings and pattern groups with real, tested endpoints, but this docs site has no generated reference for it yet.'
+kind: 'use-case'
+audience: 'developers'
+section: 'evidence-and-findings'
+sidebarTitle: 'Findings and patterns'
+---
+
+Findings and pattern analysis are not missing capabilities — `analysis-api` owns `Finding` and pattern groups with real, tested doors, the deterministic rule engine that produces most of them, and the tier-3 AI classifier that reads the ones the rules cannot settle. What is missing is a <span className="kw">generated</span> reference for that repo on this docs site, so there is no `/services/analysis-api/` page here to read or link to yet.
+
+## What to do
+
+Read the repo's own `README.md` and `CONTEXT.md` directly (`FairStandard/analysis-api` on GitHub) until this site's generated reference for it is published — the same two files this site would otherwise turn into the pages you're used to for every other service. Submit a record for analysis with `POST /jobs`, carrying the job's own id, the workspace, case, and record ids, and a `job_type`; the service queues it and returns `202` with a `message_id`, the same fire-and-forget shape `media-api`'s pipeline uses.
+
+Read a case's findings back with `GET /cases/{case_id}/findings`, workspace-scoped by the `X-Workspace-Id` header like every other door in this section. Each finding carries the tier that produced it (`1` for record rules, `2` for order rules, `3` for the AI classifier) and that tier never changes once the finding exists. Mark findings reviewed in bulk with `POST /cases/{case_id}/findings/bulk-review`, sending the content hashes you're resolving and the review status you're setting.
+
+Before you build a UI around findings or patterns, check `entitlements-api`'s `resolve` door for `cap.findings` or `cap.patterns` with the case's id, the same per-case check [your case's capability gating](/your-case/developers/how-case-capabilities-are-gated-per-case) describes for order analysis — both capabilities are Premium Professional and enabled per case, not open by default.
+
+## What Vero does for you
+
+`analysis-api` never calls out for AI reasoning until the deterministic tiers have already had a chance to settle a record, so most findings arrive with no model spend attached at all — `GET /internal/cases/{case_id}/usage` is where billing reads the sum of what the tier-3 classifier did spend, never from a raw event stream you would otherwise have to reconcile yourself. `GET /internal/finding-types` and `GET /internal/condition-types` are the service's own registries of what a finding or a detection rule can actually be, seeded as data rather than hardcoded, so a caller who wants to render a legend for finding types does not need to keep a hand-copied list in sync with the engine.
+
+None of that closes the actual gap here: this docs site cannot yet tell you which finding types are `active` versus `reserved`, or show you a worked request against a live OpenAPI document, because the build that would generate those pages has not picked this repo up. Treat the endpoints above as accurate today, sourced from the repo directly, and re-check this page once `/services/analysis-api/` exists.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Evidence and findings overview" icon="package" href="/evidence-and-findings/developers/overview">
+    What backs every capability in this section today.
+  </Card>
+  <Card title="How case capabilities are gated per case" icon="shield-check" href="/your-case/developers/how-case-capabilities-are-gated-per-case">
+    The Grant, resolve, and tier model behind the entitlements check above.
+  </Card>
+</Columns>
