@@ -28,7 +28,7 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Platform Guide",
+        "tab": "Platform Overview",
         "groups": [
           {
             "group": "Get Started",
@@ -84,6 +84,17 @@
               "attorneys/managing-clients",
               "attorneys/law-assembly",
               "attorneys/marketplace-listing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Documentation",
+        "groups": [
+          {
+            "group": "About",
+            "pages": [
+              "how-this-site-is-built"
             ]
           }
         ]

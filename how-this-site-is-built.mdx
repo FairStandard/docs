@@ -1,0 +1,44 @@
+---
+title: "How this site is built"
+description: "The API Documentation tab is regenerated from the service repos three times a day. Here is what is read, what is written, and how to fix a page."
+---
+
+The **Platform Overview** tab is written by people. Every service group under the **API Documentation** tab is generated.
+
+## The loop
+
+Three times a day the docs build runs on the FairStandard build machine. For each service repo it:
+
+<Steps>
+  <Step title="Pulls main">
+    Fetches the repo and fast-forwards `main`. A repo that is busy with another automated loop, or has uncommitted changes, is skipped and keeps its previous pages.
+  </Step>
+  <Step title="Exports the API spec">
+    Imports the FastAPI app and writes its OpenAPI document. `servicekit` is a library and has no API.
+  </Step>
+  <Step title="Converts the docs">
+    Turns `README.md`, `CONTEXT.md`, and `docs/adr/*.md` into pages, escaping anything that would break MDX.
+  </Step>
+  <Step title="Validates and ships">
+    Runs the Mintlify validator and link checker. If the site builds, a reviewer model reads the change summary and the build either pushes to `main` or is held on a branch for a person to look at.
+  </Step>
+</Steps>
+
+## What maps where
+
+| In the service repo | On this site |
+| --- | --- |
+| `README.md` | Overview page |
+| `CONTEXT.md` | Domain model page |
+| `docs/adr/NNNN-title.md` | One page each under Decisions |
+| The running app's OpenAPI document | API reference pages |
+
+## Fixing a page
+
+Edit the source file in the service repo and merge it. The next build picks it up. Editing files under `services/` or `openapi/` in the docs repo does nothing lasting; the build overwrites them.
+
+<Note>
+The build escapes `{`, `}`, and `<tag>` in prose so plain markdown renders. Code blocks and inline code are left alone.
+</Note>
+
+The build lives in the `workflows` folder of the repositories checkout as `docs-site-build.md`, with the runner under `~/.claude/docs-site-build/`.
