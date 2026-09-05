@@ -1,0 +1,60 @@
+---
+title: "Page through a case's docket and orders"
+description: "Read case-api's docket and order lists as Page results, and keep a stable sort across repeated reads."
+kind: 'how-to'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'Page the docket'
+---
+
+`case-api`'s list doors for the docket and for orders return a `Page`: `{items, total}`, where `items` is one window bounded by `limit` and `offset`, and `total` is how many rows match across every page. This walks through reading a full docket in windows and knowing when you're done.
+
+## Before you begin
+
+You need a case ID and a workspace ID scoped to that case. `limit` and `offset` are query parameters on both list doors; if you omit them, `case-api` applies its own defaults rather than returning every row unbounded.
+
+1. Read the first window.
+
+   ```bash
+   curl "https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket?limit=25&offset=0" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   The response carries `items` (up to 25 docket entries) and `total` (the full count of docket entries on the case).
+
+2. Read the next window.
+
+   ```bash
+   curl "https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket?limit=25&offset=25" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   Rows come back in the door's own sort, then the primary key as a tiebreaker, so two reads of the same window return the same rows in the same order — safe to retry a failed page without deduplicating on your side.
+
+3. Stop when you've read `total` rows.
+
+   Compare the running count of `items` you've read against `total` from the first response. `total` does not change between pages of the same read unless something else writes to the docket while you're paging — a rare case worth a re-check if your integration runs a long-lived export.
+
+4. Repeat the same pattern for orders.
+
+   ```bash
+   curl "https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/orders?limit=25&offset=0" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   Orders page identically to docket entries — same `Page` shape, same sort guarantee.
+
+## What happens next
+
+A page you've already read stays valid to re-fetch at any time; nothing about `case-api`'s list doors invalidates a prior window. If you're building a sync job rather than a one-time export, track the highest `occurred_at` you've seen on the docket and the highest `issued_at` on orders, and use those as your own resume point rather than re-paging from offset 0 on every run.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Create a case and log its first docket entries" icon="file-plus" href="/your-case/developers/create-a-case-and-log-its-first-docket-entries">
+    The write side of the same docket and orders.
+  </Card>
+  <Card title="Your app needs one timeline for a case" icon="clock" href="/your-case/developers/your-app-needs-one-timeline-for-a-case">
+    Merge these paged docket entries with evidence-api's records.
+  </Card>
+</Columns>

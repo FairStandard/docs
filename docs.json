@@ -35,14 +35,44 @@
             "group": "Get started",
             "pages": [
               "introduction",
-              "who-its-for",
-              "quickstart"
+              "who-its-for"
+            ]
+          },
+          {
+            "group": "Your case",
+            "pages": [
+              {
+                "group": "Litigants",
+                "pages": [
+                  "your-case/litigants/overview",
+                  "your-case/litigants/get-started",
+                  "your-case/litigants/flag-something-for-review",
+                  "your-case/litigants/share-evidence-with-a-witness",
+                  "your-case/litigants/how-your-case-page-is-organized",
+                  "your-case/litigants/how-vero-explains-your-court-orders",
+                  "your-case/litigants/witness-needs-to-see-evidence",
+                  "your-case/litigants/troubleshooting"
+                ]
+              },
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "your-case/attorneys/overview",
+                  "your-case/attorneys/get-started",
+                  "your-case/attorneys/work-through-a-clients-flagged-items",
+                  "your-case/attorneys/track-a-clients-review-progress",
+                  "your-case/attorneys/manage-a-witness-link-for-a-clients-case",
+                  "your-case/attorneys/how-the-docket-and-timeline-work",
+                  "your-case/attorneys/how-order-analysis-catches-conflicts",
+                  "your-case/attorneys/youre-double-booked-next-week",
+                  "your-case/attorneys/troubleshooting"
+                ]
+              }
             ]
           },
           {
             "group": "Core concepts",
             "pages": [
-              "concepts/case-workspace",
               "concepts/law-assembly-engine",
               "concepts/evidence-intake",
               "concepts/roles"
@@ -51,7 +81,6 @@
           {
             "group": "Case management",
             "pages": [
-              "case-management/creating-a-case",
               "case-management/uploading-evidence",
               "case-management/deadlines-and-next-steps",
               "case-management/messaging"
@@ -96,6 +125,18 @@
             "group": "About",
             "pages": [
               "how-this-site-is-built"
+            ]
+          },
+          {
+            "group": "Your case for developers",
+            "pages": [
+              "your-case/developers/overview",
+              "your-case/developers/get-started",
+              "your-case/developers/create-a-case-and-log-its-first-docket-entries",
+              "your-case/developers/page-through-a-cases-docket-and-orders",
+              "your-case/developers/how-case-capabilities-are-gated-per-case",
+              "your-case/developers/your-app-needs-one-timeline-for-a-case",
+              "your-case/developers/troubleshooting"
             ]
           },
           {
@@ -589,5 +630,19 @@
       "format": "woff2",
       "weight": 400
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/quickstart",
+      "destination": "/your-case/litigants/get-started"
+    },
+    {
+      "source": "/case-management/creating-a-case",
+      "destination": "/your-case/litigants/get-started"
+    },
+    {
+      "source": "/concepts/case-workspace",
+      "destination": "/your-case/litigants/how-your-case-page-is-organized"
+    }
+  ]
 }

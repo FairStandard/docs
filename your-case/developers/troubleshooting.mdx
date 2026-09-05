@@ -1,0 +1,43 @@
+---
+title: 'Troubleshoot your case'
+description: 'Fixes for the errors integrations hit most often against case-api and entitlements-api for this section.'
+kind: 'troubleshooting'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'Troubleshooting'
+---
+
+Most problems integrating with this section come down to a missing `X-Workspace-Id` header, an unpublished practice-area pack, or asking `entitlements-api` a question its `resolve()` door was not designed to answer. The list below covers what comes up most.
+
+<AccordionGroup>
+  <Accordion title="Creating a case returns a 422 on phase">
+    `case-api` validates `phase` against the case's `practice_area` through its `PacksReader` seam. A 422 here means either the practice area has no published pack yet, or the phase string does not match that pack's lifecycle vocabulary exactly. Create the case without `phase` first, confirm the practice area has a published pack, and set `phase` in a follow-up update once you know a valid value.
+  </Accordion>
+  <Accordion title="A case, docket entry, or order from another workspace returns 404 instead of 403">
+    This is deliberate, not a bug. Every query on `case-api` filters by `workspace_id` before anything else — a row from another workspace does not surface as a permission error, because as far as the query is concerned, it does not exist. Confirm you're sending the `X-Workspace-Id` header that matches the workspace the resource was created under.
+  </Accordion>
+  <Accordion title="entitlements-api's resolve returns denied for a grant you know exists">
+    Check whether you passed `case_id`. Order analysis and witness links are `per_case_enablable`: an org-level Advanced-tier grant does not turn either one on for a case that has not itself been enabled. Resolving without `case_id` answers a different, org-level question than resolving with it.
+  </Accordion>
+  <Accordion title="Paging the docket returns fewer rows than total on the first page">
+    That's the `limit` you sent, not an error. `Page` always returns `{items, total}`, where `items` is bounded by `limit` and `offset` and `total` is the full count. Keep paging with an increasing `offset` until the rows you've read equal `total`.
+  </Accordion>
+  <Accordion title="There's no endpoint for waiting-on, review tracking, order analysis content, flag for review, witness link creation, workload estimation, or a dashboard rollup">
+    That's accurate, not a documentation gap. No service in this build publishes those doors yet. `case-api` covers case tracking and the docket; `entitlements-api` covers whether order analysis, witness links, or estimation is turned on, not what any of them contain. See this section's overview for exactly what exists today.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, check the service's own `docs/adr/` for a decision that names the behavior deliberately before assuming it's a defect, then contact support@fairstandard.com with the workspace ID, case ID, and the exact request you sent.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your case overview" icon="package" href="/your-case/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="How case capabilities are gated per case" icon="shield-check" href="/your-case/developers/how-case-capabilities-are-gated-per-case">
+    The Grant, resolve, and tier model behind entitlements-api's denials.
+  </Card>
+</Columns>

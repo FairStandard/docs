@@ -1,0 +1,92 @@
+---
+title: 'Get started with your case'
+description: 'Create a case on case-api, read its docket, and check entitlement on entitlements-api before you call a gated capability.'
+kind: 'get-started'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'Get started'
+---
+
+This guide takes you through the calls a client integrating with the your case section makes most: creating a case, reading its docket and orders, and checking whether a tiered capability such as order analysis is turned on before you build against it.
+
+## What you'll learn
+
+- How to authenticate a call with the `X-Workspace-Id` header
+- How to create a case and add its first docket entry on `case-api`
+- How to page through a case's docket and orders
+- How to check whether a case has an Advanced-tier capability enabled on `entitlements-api`
+
+## Before you begin
+
+You need a workspace ID and a bearer token good for that workspace. Every call in this section is workspace-scoped: `case-api` and `entitlements-api` both take `X-Workspace-Id` on every internal request, and a row from another workspace never surfaces — not even as a 403. It comes back as if it does not exist.
+
+### Step 1: Create a case
+
+```bash
+curl -X POST https://case-api.internal.fairstandard.com/internal/cases \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "caption": "Smith v. Smith",
+    "case_number": "2026-DR-04821",
+    "court": "Superior Court of Fulton County",
+    "practice_area": "family-law"
+  }'
+```
+
+`practice_area` is required. `phase`, if you set one, is validated against that practice area's published pack through `case-api`'s `PacksReader` seam — an unknown phase, or a practice area with no published pack, comes back as a 422.
+
+### Step 2: Add a docket entry
+
+```bash
+curl -X POST https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"kind": "hearing", "occurred_at": "2026-09-18T14:00:00Z", "result": "continued"}'
+```
+
+`kind` and `result` are extensible strings, not enums — use the same values the court's own record uses rather than inventing your own vocabulary.
+
+### Step 3: Read the docket back
+
+```bash
+curl https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket?limit=25&offset=0 \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+The response is a `Page`: `{items, total}`, with rows in the door's own sort and the primary key as a tiebreaker, so paging the same window twice returns the same rows in the same order.
+
+### Step 4: Check entitlement before you call a gated capability
+
+Order analysis and witness links are Advanced-tier and can be turned on per case. Before your integration shows either one, resolve it:
+
+```bash
+curl https://entitlements-api.internal.fairstandard.com/internal/resolve \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -G --data-urlencode "capability_key=cap.order-analysis" \
+  --data-urlencode "case_id=$CASE_ID"
+```
+
+A denial here is a fact about the case's setup, not an error condition — do not retry it, and do not surface it to a user as a failure.
+
+## Tips
+
+- No repo in this build publishes endpoints for the waiting-on tracker, review tracking, order analysis content, witness link creation, workload estimation, or a dashboard rollup. Confirm a door exists in this section's [overview](/your-case/developers/overview) before you design against it.
+- A combined timeline is two reads, not one: `case-api`'s docket entries and `evidence-api`'s records for the same case, interleaved by timestamp on your side.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your case overview" icon="package" href="/your-case/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="Create a case and log its first docket entries" icon="file-plus" href="/your-case/developers/create-a-case-and-log-its-first-docket-entries">
+    The same setup as a standalone how-to, with error handling.
+  </Card>
+  <Card title="How case capabilities are gated per case" icon="shield-check" href="/your-case/developers/how-case-capabilities-are-gated-per-case">
+    The Grant and tier model behind the resolve call above.
+  </Card>
+  <Card title="Troubleshoot your case" icon="life-buoy" href="/your-case/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

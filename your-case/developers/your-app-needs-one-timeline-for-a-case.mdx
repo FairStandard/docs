@@ -1,0 +1,42 @@
+---
+title: 'Your app needs one timeline for a case'
+description: 'No service publishes a merged case timeline yet. Build one from case-api docket entries and evidence-api records, interleaved by timestamp.'
+kind: 'use-case'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'One timeline for a case'
+---
+
+The your case section's combined timeline shows a litigant or attorney every court event and every record for a case, in one ordered sequence. No repo in this build publishes that as a single endpoint — you assemble it from two services.
+
+## What to do
+
+Read `case-api`'s docket for the case:
+
+```bash
+curl "https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket?limit=100&offset=0" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+Read `evidence-api`'s records for the same case, using whatever door your service integration has for record lookup by case. Each record and each docket entry carries its own timestamp — `occurred_at` on a docket entry, the record's own written-at time on an evidence record.
+
+Sort both result sets together by timestamp on your side. Keep the two kinds of row distinguishable in your merged view — a docket entry carries the court's own `kind` and `result`, while a record carries evidence-api's `content_hash` and is never mutated once written. Do not collapse them into one shape that loses that distinction; the litigant and attorney pages both show the court's own label next to a plain-language note, and a merged, deduplicated shape can't reconstruct that once it's flattened.
+
+Page through both sources fully before you sort — `case-api`'s docket door and `evidence-api`'s record reads both return paged results, and a timeline built from a partial first page will look complete right up until it doesn't.
+
+## What Vero does for you
+
+`case-api` and `evidence-api` each guarantee a stable sort within their own paged results, so a page you've already read and merged does not need to be re-fetched or re-sorted later — only new rows past your last read do. Both services scope every row to `workspace_id`, so a merged timeline built from two workspace-scoped reads never surfaces a row that belongs to another workspace, even if a bug in your merge logic tried to combine data across two cases by mistake.
+
+Neither service tells you which rows are new since your last read. If your integration needs to poll for updates rather than rebuild the whole timeline each time, track the highest timestamp you've already merged from each source and filter your next read to rows after it, on your side — there is no `updated_since` parameter on either door today.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Page through a case's docket and orders" icon="list" href="/your-case/developers/page-through-a-cases-docket-and-orders">
+    The paging pattern this use case depends on.
+  </Card>
+  <Card title="Your case overview" icon="package" href="/your-case/developers/overview">
+    What backs every capability in this section today.
+  </Card>
+</Columns>

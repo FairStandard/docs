@@ -1,0 +1,37 @@
+---
+title: 'How case capabilities are gated per case'
+description: 'How entitlements-api resolves whether order analysis, witness links, or workload estimation is allowed on a specific case, at the moment of use.'
+kind: 'concept'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'Capability gating'
+---
+
+Case tracking and the docket are open to every case relationship on `case-api` — there is nothing to check before you call them. Three capabilities in this section are different: order analysis and witness links require the Advanced tier and can be turned on or off per case, and workload estimation requires Premium Professional and is visible only to an owner or attorney org role. `entitlements-api` is what decides all three, and it decides them the same way every time.
+
+## A Grant is an authorization, not an answer
+
+`entitlements-api` stores `Grant` rows — one payer's authorization for a capability, a whole tier, or a whole pro-bono case. A grant existing does not mean access is currently allowed. `resolve()` is the door that turns a set of grants into a yes or no, at the moment of use, for a given workspace, case, and beneficiary. Nothing is cached: canon rules that feature access is resolved at use time, never hard-owned, so `resolve()` re-fetches active grants on every call rather than remembering a prior answer.
+
+## Tiers are cumulative, capabilities are a registry string
+
+`cap.order-analysis`, `cap.witness-links`, and `cap.estimation` are registry strings, seeded into `entitlements-api` from the canon capability register as data — never a hardcoded list in the service's own code. A `Grant` with a `tier` set (rather than a specific `capability_key`) covers every capability at or below that tier: an Advanced-tier grant covers order analysis and witness links without a separate grant for each one, because the tier ladder is cumulative. `resolve()` expands that at read time against the capability's own `tier_required`, so raising or lowering a grant's tier changes what it covers immediately, with no re-issuing of capability-level grants.
+
+## Per-case enablement is a separate axis from tier
+
+Order analysis and witness links are marked `per_case_enablable` in the register: an org can hold the Advanced tier and still have the capability off on a specific case, deliberately. `resolve()`'s `case_id` argument is what makes that check possible — pass it, and a case that has not been turned on for the capability resolves to denied even under an Advanced-tier grant that would otherwise cover it. Omit it, and you get the org-level answer only, which is the wrong question to ask before you show a case-scoped feature.
+
+## What a denial means
+
+A denial from `resolve()` is a fact about the case's or the org's current setup, not an error condition and not a reason to retry. Treat it the same way the litigant and attorney pages already do: the feature is not enabled here yet, and that says nothing about whether anything else on the case is working correctly.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Get started with your case" icon="rocket" href="/your-case/developers/get-started">
+    See a resolve call against a real capability key.
+  </Card>
+  <Card title="Your case overview" icon="package" href="/your-case/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+</Columns>

@@ -1,0 +1,43 @@
+---
+title: 'Your case overview'
+description: 'What backs Your case today: case-api for the case record and docket, entitlements-api for per-case gating, and what has no service yet.'
+kind: 'overview'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'Overview'
+---
+
+The your case section covers ten capabilities in the platform's canon register: case tracking, the combined timeline, the docket, the waiting-on tracker, review tracking, order analysis, flag for review, witness links, workload estimation, and the dashboard. This page maps each one to what actually exists in this build today, so you know which door to call and which one you'd have to build yourself.
+
+## How it works
+
+Two services in this build carry real, tested endpoints for this section. `case-api` is the case foundation store: `Case`, `CaseParty`, `CourtOrder`, and `DocketEntry`, each row scoped by `workspace_id`. It backs case tracking and the docket directly — creating a case, listing and updating its parties, its court orders, and its docket entries, all through `/internal/cases` and its nested routes. See [case-api's overview](/services/case-api/index) and [domain model](/services/case-api/domain-model).
+
+`entitlements-api` answers one question — is a capability allowed on this case, right now — for the capabilities in this section that are tiered and per-case: order analysis and witness links require the Advanced tier and can be turned on per case; workload estimation requires Premium Professional and is visible only to an owner or attorney org role. `entitlements-api`'s `resolve` door is how you check any of that before you build a UI that assumes access. See [entitlements-api's overview](/services/entitlements-api/index) and [domain model](/services/entitlements-api/domain-model).
+
+The combined timeline is not one endpoint. It is `case-api`'s docket entries merged, by timestamp, with `evidence-api`'s records — the calls and messages evidence-api holds for the same case. Nothing in this build merges them for you yet; you read both and interleave them client-side. See [evidence-api's domain model](/services/evidence-api/domain-model) for the `Record` shape.
+
+The canon register still marks every capability in this section as `unbuilt` at the product level. That status describes the platform frontend, not this repo's services — `case-api`'s case, party, order, and docket doors are implemented, tested, and workspace-scoped today. No service in this build publishes dedicated endpoints for the waiting-on tracker, review tracking, order analysis content itself, flag for review, witness link creation, workload estimation, or a dashboard rollup. If your integration needs one of those, there is nothing to call yet — say so in your own status page rather than guessing at a shape.
+
+## What you can do here
+
+- **Create and read cases.** `POST /internal/cases` and `GET /internal/cases/{case_id}` on `case-api`, workspace-scoped by the `X-Workspace-Id` header.
+- **Manage the docket.** List, create, get, and update docket entries under `/internal/cases/{case_id}/docket` and `/internal/docket/{entry_id}`.
+- **Manage court orders.** The same pattern under `/internal/cases/{case_id}/orders` and `/internal/orders/{order_id}`.
+- **Check per-case entitlement.** Call `entitlements-api`'s resolve door with a capability key such as `cap.order-analysis` or `cap.witness-links` before you show or gate a feature on a case.
+- **Assemble a timeline.** Read `case-api`'s docket entries and `evidence-api`'s records for the same case and interleave them by timestamp.
+
+## Availability
+
+Order analysis, witness links, and workload estimation are gated by tier and, for order analysis and witness links, by whether the specific case has been turned on for it — call `entitlements-api`'s resolve door and treat a denial as a fact about the case's setup, not an error to retry. Waiting-on, review tracking, flag for review, and the dashboard rollup have no entitlements gate and no backing service in this build; there is nothing to resolve or call for them yet.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with your case" icon="rocket" href="/your-case/developers/get-started">
+    Set up a workspace-scoped call against case-api and check entitlement with entitlements-api.
+  </Card>
+  <Card title="How case capabilities are gated per case" icon="shield-check" href="/your-case/developers/how-case-capabilities-are-gated-per-case">
+    The Grant, resolve, and tier model behind order analysis, witness links, and estimation.
+  </Card>
+</Columns>

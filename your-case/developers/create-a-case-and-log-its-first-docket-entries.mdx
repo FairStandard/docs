@@ -1,0 +1,79 @@
+---
+title: 'Create a case and log its first docket entries'
+description: 'Create a case on case-api with a valid practice area and phase, then add court parties and its first docket entries.'
+kind: 'how-to'
+audience: 'developers'
+section: 'your-case'
+sidebarTitle: 'Create a case'
+---
+
+A case in `case-api` is one row with a caption, a case number, a court, and a phase, plus the parties and docket entries that attach to it. This walks through creating one from scratch, including the phase validation you'll hit if you skip `practice_area`.
+
+## Before you begin
+
+You need a workspace ID with write access and, if you plan to set `phase` on creation, a `practice_area` that has a published pack — `case-api` validates `phase` against that practice area's lifecycle vocabulary through its `PacksReader` seam, and rejects an unpublished practice area or an unknown phase with a 422.
+
+1. Create the case.
+
+   ```bash
+   curl -X POST https://case-api.internal.fairstandard.com/internal/cases \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "caption": "Smith v. Smith",
+       "case_number": "2026-DR-04821",
+       "court": "Superior Court of Fulton County",
+       "practice_area": "family-law",
+       "phase": "discovery"
+     }'
+   ```
+
+   A successful response returns the created `Case`, including its `id`. Keep it — every other call in this walkthrough is scoped to it.
+
+2. Add the case parties.
+
+   ```bash
+   curl -X POST https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/parties \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"role": "petitioner", "name": "Jordan Smith"}'
+   ```
+
+   A case party is a caption role — petitioner, respondent, and similar — scoped to the case itself. It is not a case-team record: who represents the case, and which org, lives in identity-api, not here.
+
+3. Log the first docket entry.
+
+   ```bash
+   curl -X POST https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"kind": "filing", "occurred_at": "2026-09-05T09:00:00Z", "result": "filed"}'
+   ```
+
+   `kind` and `result` are plain strings, not enums, so use the label the court's own record uses rather than a value you invent.
+
+4. Add the first court order, if one exists.
+
+   ```bash
+   curl -X POST https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/orders \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"title": "Temporary custody order", "issued_at": "2026-09-05T09:00:00Z", "status": "active"}'
+   ```
+
+   Skip this step for a case with no order yet — orders attach whenever one is entered, not only at creation.
+
+## What happens next
+
+The case, its parties, its docket entries, and its orders are all readable immediately from the matching `GET` doors, scoped by the same `workspace_id` you wrote with. Nothing here triggers a notification or a downstream write in another service — `case-api` does not call out to anything on a write, so a case created here does not automatically produce a deadline, a timeline row from evidence, or an entitlement grant. Those are separate calls, to separate services, if your integration needs them.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Page through a case's docket and orders" icon="list" href="/your-case/developers/page-through-a-cases-docket-and-orders">
+    Read the docket and order lists back with the Page shape.
+  </Card>
+  <Card title="Your app needs one timeline for a case" icon="clock" href="/your-case/developers/your-app-needs-one-timeline-for-a-case">
+    Merge this case's docket with evidence-api's records into one ordered view.
+  </Card>
+</Columns>
