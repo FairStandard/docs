@@ -1,0 +1,93 @@
+---
+title: "media-api"
+sidebarTitle: "Overview"
+description: "FairStandard's media analysis service: transcription, speaker identity, and emotion measurement over recordings (ADR 0001). See CONTEXT.md for the domain…"
+---
+
+FairStandard's media analysis service: transcription, speaker identity,
+and emotion measurement over recordings (ADR 0001). See `CONTEXT.md` for
+the domain glossary and `docs/adr/` for the decisions this service is
+built on.
+
+## Architecture
+
+Two stores, one queue, one external seam:
+
+- **Postgres** (`store.py`, `models.py`) — recording bookkeeping keyed by
+  content hash (duplicates stop at the door), speakers, and versioned
+  speaker baselines. Baseline math (`baselines.py`, `baseline_state.py`)
+  is a verbatim Welford port from the platform, golden-parity tested.
+- **Measurement store** (`measurements.py`) — a dedicated analytics
+  database (ClickHouse-class, ADR 0002) holding every Measurement: a
+  48-emotion vector plus prosody and vocalization facts, in a schema
+  this service owns (ADR 0003). Nothing else connects to it.
+- **Job queue** (`pipeline.py`) — Redis Streams via `servicekit`, one
+  `MediaJob` per pipeline stage. `run_measure_stage` is the only stage
+  wired so far: score a Recording, store its Measurements, fold one
+  Observation per speaker into that speaker's baseline, mark the
+  recording `measured` or `failed`.
+- **EmotionScorer seam** (`scoring.py`, ADR 0003) — the pipeline talks to
+  a scorer, not a provider. `translate` maps a scorer's response into our
+  schema, total over unknown emotion names (dropped and counted, never a
+  crash). `HumeScorer` is today's adapter over the external batch API;
+  the platform's own model becomes a second adapter later without
+  touching the store, the API, or the baselines.
+- **Deviation gate** (`deviations.py`) — the platform's ported
+  three-observation gate and z-score, generalized over the full measured
+  vector. Served at `GET /internal/recordings/{id}/deviations`.
+
+## HTTP surface
+
+Internal only, every route scoped by `X-Workspace-Id`:
+
+- `POST /internal/recordings` — register a Recording (dedup by content
+  hash) and enqueue its measure job. If the queue submit fails, the row
+  is marked `queue_failed` (never stranded silently at `received`) and
+  the call answers 502 (ADR 0005).
+- `POST /internal/recordings/{id}/requeue` — recovery door for a
+  `queue_failed` recording: re-submits it and marks it `received` again.
+  409s if the recording isn't `queue_failed` (ADR 0005).
+- `GET /internal/recordings/{id}` — recording status.
+- `GET /internal/recordings/{id}/timeline` — that recording's
+  Measurements, in order.
+- `GET /internal/recordings/{id}/transcript` — that recording's
+  transcript: ordered speaker segments plus a full-text convenience form,
+  derived from the measurement store's spoken segments (ADR 0004).
+- `GET /internal/recordings/{id}/deviations` — how that recording's
+  per-speaker observation deviates from each speaker's current baseline
+  (`deviations.py`); empty per speaker before their third observation.
+- `GET /internal/cases/{case_id}/speakers/{name}/baseline` — a speaker's
+  baseline state, maturity, and call count.
+
+## Status
+
+Baseline math ported with golden parity, the measurement store's schema
+and two adapters landed, the scorer/pipeline/API slice wired end to end,
+real alembic migrations exercised both directions by
+`tests/test_migrations.py`, and read doors for transcripts, timelines,
+deviations, baselines, and per-speaker summaries. Not yet done (tracked
+in Linear): the diarization/transcription stages upstream of `measure`
+— voice embeddings land with diarization, so none are stored yet — the
+Hume adapter's real wire contract (deployment config), and enrolling
+this service's own emotion model as a second `EmotionScorer` adapter.
+
+## Setup
+
+```
+uv sync --dev
+uv run pytest -q      # unit tests + testcontainers (Postgres, Redis, ClickHouse)
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+`uv sync` needs read access to the private `servicekit` repository (see
+`pyproject.toml`'s `[tool.uv.sources]` for the pinned revision); CI
+authenticates via the `SERVICEKIT_TOKEN` secret.
+
+Configuration is environment-driven (`settings.py`, `MEDIA_` prefix).
+With no `MEDIA_SCORER_API_KEY` set, the service now REFUSES to start —
+a silently-wired `FakeScorer` in production would mark real recordings
+`measured` with zero real data, indistinguishable from a working deploy.
+Set `MEDIA_ALLOW_FAKE_SCORER=1` for local or dev runs with no real key.
+

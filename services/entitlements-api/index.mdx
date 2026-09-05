@@ -1,0 +1,85 @@
+---
+title: "entitlements-api"
+sidebarTitle: "Overview"
+description: "The use-time answer to \"is this capability available on this case.\" Organizations always pay; who benefits (a client, a pro-bono party, or nobody named at…"
+---
+
+The use-time answer to "is this capability available on this case."
+Organizations always pay; who benefits (a client, a pro-bono party, or
+nobody named at all) is deliberately decoupled from who paid. Every
+resolution is computed fresh, at the moment of use — never cached, never
+hard-owned. Own Postgres, own service, workspace-scoped throughout.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+Configuration is environment-driven under the `ENTITLEMENTS_` prefix
+(`settings.py`). Migrations are real alembic — `uv run alembic upgrade
+head` against the same `ENTITLEMENTS_DATABASE_URL`; the chain is
+exercised both directions by `tests/test_migrations.py`.
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push
+and pull request. Tests spin up a real Postgres via testcontainers
+(Docker required locally).
+
+## Architecture
+
+- `resolver.py` — the deterministic resolver: `resolve(grants,
+  capability_key, tier_required, case_id, beneficiary_ref, now)` reads
+  no clock, touches no database, and is never cached. Deny-by-default;
+  fixed precedence (direct grant, then pro-bono, then tier, then
+  nothing).
+- `models.py` — the two tables: `Grant` (one payer's authorization) and
+  `CapabilityTier` (the capability registry, seeded as data).
+- `capability_tier_seed.json` — a checked-in snapshot of every
+  capability's `tier_required` and `flag`, generated from
+  `platform/canon/register/features/*.yaml`. Never read from the canon
+  path at runtime or in CI — canon is read-only to this service.
+- `store.py` — the orchestration layer: `issue_grant`/`revoke_grant`
+  (org-scoped via `IdentityReader`, deduped so re-issuing the same grant
+  never double-bills), `resolve` (fetches fresh grants and the
+  capability's tier, then calls `resolver.resolve`), `list_grants_by_case`,
+  `ensure_seeds`.
+- `identity_reader.py` — the `IdentityReader` seam to identity-api's real
+  `GET /internal/verify` door (ADR 0004). `HttpIdentityReader` speaks it
+  through servicekit's doorway contract; `FakeIdentityReader` backs it
+  for tests.
+- `main.py` — the internal HTTP surface, workspace-scoped by
+  `X-Workspace-Id`: issue grant, revoke grant, resolve, list-grants-by-case.
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Out of scope this wave
+
+Reading identity-api's `Organization.pro_bono` field — pro-bono is
+modeled as a case-scoped grant instead (ADR 0003). Automatic
+re-materialization of `capability_tier_seed.json` when canon changes —
+regenerating and committing a new snapshot is a deliberate, reviewable
+step today, not a build-time or runtime fetch.
+
+## Status
+
+Grant issue/revoke and resolve are built, tested, and workspace-scoped.
+Grant issuance and revocation are role-gated: the caller's org role must
+be in the configured authorized set
+(`ENTITLEMENTS_AUTHORIZED_GRANT_ROLES_CSV`, default owner/admin),
+verified against identity-api's real `/internal/verify` door (FS-912).
+The capability registry is seeded from a real snapshot of canon's 38
+published capabilities. `IdentityReader` is wired to the real
+`HttpIdentityReader` against identity-api's `/internal/verify`
+(`ENTITLEMENTS_IDENTITY_API_URL`).
+

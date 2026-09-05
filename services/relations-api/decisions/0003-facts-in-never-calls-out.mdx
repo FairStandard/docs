@@ -1,0 +1,34 @@
+---
+title: "3. Facts flow in; this service never calls out"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The relations service must not reach into other services' private
+databases (the platform's own-Postgres-each ruling), and coupling it to
+their APIs would make it a hub that changes when they do.
+
+## Decision
+
+Steady-state edges arrive as Facts on THIS service's own fact stream:
+producers write assertions into it through the shared vocabulary
+package's publisher (the one write door they get — they never see the
+consumer side), and this service's projector consumes and writes Edges.
+The stream is private in the sense that matters: only this service reads
+it, and nothing else ever queries the edges except through the read
+doors. This service exposes reads and the
+bulk-load door; it initiates no calls to any other service.
+
+## Consequences
+
+Producers stay decoupled (they publish and move on), the relations
+service stays a leaf on the call graph, and replaying facts can rebuild
+the graph.
+

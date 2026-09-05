@@ -1,0 +1,70 @@
+---
+title: "3. Pro bono is a whole-case grant, not identity's org flag"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Two different "pro bono" facts exist on the platform, and this service
+needed to pick which one it means when `resolve()` returns the reason
+`"pro bono"`:
+
+- identity-api's `Organization.pro_bono` — a boolean classification of
+  the *org itself* (a verified legal-aid/nonprofit organization), set at
+  org creation and used, per identity-api's own CONTEXT.md, to change
+  *billing treatment* for that org's seats generally.
+- canon's `pro_bono.yaml` `org_case_flag` mechanism — "any org admin can
+  flag a *case* pro-bono via a self-serve, support-light control. The
+  flag zeroes all case charges... audited monthly." This is a per-case
+  action, not a standing org property, and it is the mechanism canon
+  actually describes as producing free access on a case.
+
+identity-api also has no HTTP door that serves `Organization.pro_bono`
+at all — only `/internal/register`, `/internal/login`, `/internal/logout`,
+`/internal/verify`, org/member/case-team CRUD, and the registries doors
+exist (`identity-api/main.py`). Reading it would mean inventing a door
+identity-api doesn't have.
+
+## Decision
+
+"Pro bono" in this service means the `org_case_flag` mechanism, modeled
+as a `Grant` with `source="pro-bono"`, `capability_key` and `tier` both
+null, scoped to one `case_id`. `resolver.resolve()` treats such a grant
+as covering every capability requested on that case — matching "zeroes
+all case charges," not one capability at a time. identity-api's
+`Organization.pro_bono` field is never read by this service; it answers
+a different question (is this org a legal-aid org) that has no bearing
+on whether a specific case's charges are waived.
+
+## Consequences
+
+Flagging a case pro-bono is an ordinary `issue_grant` call (org-scoped,
+same door as any other grant) with `source="pro-bono"` and no
+capability_key/tier — no special-cased door was needed. If a future
+product decision ties pro-bono eligibility to `Organization.pro_bono`
+(for example, restricting who can flag a case), that requires
+identity-api to serve that fact through a real door first — inventing
+the read now, ahead of that door existing, is exactly the mistake this
+ADR is written to avoid.
+
+## Addendum: role-gating issue/revoke (FS-912, 2026-08-30)
+
+Because a pro-bono flag is issued through the same `issue_grant` door as
+any other grant, the question of *who* may flag a case pro-bono (or
+issue/revoke any grant) is the org-role check added by this addendum,
+not a pro-bono-specific rule. `Store._require_member` now checks the
+acting token's `org_role` (already served by identity-api's
+`/internal/verify`, per `identity_reader.py` and its ADR 0004) against
+`settings.authorized_grant_roles` — a configurable set, default
+`{"owner", "admin"}`, not a hardcoded enum. Before this addendum, any
+live org member — regardless of role — could issue or revoke a grant,
+including a pro-bono flag; that gap is closed for pro-bono the same way
+it's closed for every other grant, because pro-bono never had its own
+door to begin with.
+

@@ -1,0 +1,96 @@
+---
+title: "Domain model"
+description: "The learning context is the platform's learning center: research content, state-specific process guides, modules attorneys assign to clients with progress…"
+---
+
+The learning context is the platform's learning center: research content,
+state-specific process guides, modules attorneys assign to clients with
+progress tracking, and evidence-driven module suggestions, without any of
+that content being written into application code — the same agnosticism
+packs-api holds for practice-area configuration (platform DESIGN.md
+section 8).
+
+## Language
+
+**Module**:
+One published version of one piece of learning content. Immutable once
+published — a module is never edited, only superseded by a new version.
+Belongs to a practice area, optionally scoped to a jurisdiction (a state
+process guide is jurisdiction-scoped; a general curriculum lesson is
+not). `kind` is a registry string (`state_process_guide`,
+`curriculum_lesson`, ...), not an enum — new kinds are added by
+publishing content with a new value.
+_Avoid_: lesson (a lesson is one block inside a module, not the module
+itself), course (implies a fixed sequence across modules, which this
+service does not model)
+
+**Lesson**:
+One ordered content block inside a module's `lessons` list. Has a `key`
+(stable within its module, used by `Progress` to record completion) and
+whatever content fields its `kind` needs — a state process guide's
+lesson carries `statute_refs` (jurisdiction + citation pairs resolved
+through the state-law seam at render time); nothing else does.
+
+**Assignment**:
+One attorney's assignment of one module version to one assignee, inside
+one workspace. Pins `module_version` at assign time (ADR 0003) — an
+assignment's lesson list never changes underneath in-progress work, even
+if the module is republished later. `case_id` is optional: an assignment
+tied to no case is valid (a curriculum item, or prep work started before
+a case exists).
+_Avoid_: enrollment (implies a course sequence this service doesn't have)
+
+**Progress**:
+One lesson's completion record for one assignment. Keyed by
+`(assignment_id, lesson_key)` — recording the same lesson complete twice
+is idempotent, not an error.
+
+**Suggestion**:
+A module offered as relevant to a case, computed by intersecting the
+case's analysis finding types (from analysis-api) with a module's
+`addresses_finding_types`. The mapping from finding type to module is
+data on the module (ADR 0002), never a hardcoded table in this service —
+`suggestions.py` contains no finding type or module key literals.
+
+## Not workspace-scoped: module content
+
+Module content is shared platform content, not per-workspace data. There
+is no workspace column on `Module` and no `X-Workspace-Id` header on any
+`/internal/modules/...` door — every workspace on the platform reads the
+same published module, the same document-access discipline packs-api
+holds for packs. See `main.py`'s module docstring and ADR 0001.
+
+## Workspace-scoped: assignments and progress
+
+`Assignment` and `Progress` carry a `workspace_id` column, and every
+`/assignments/...` door requires the `X-Workspace-Id` header — the
+deadlines-api / case-api discipline. A row from another workspace is
+invisible; `Store` methods take `workspace_id` as their first argument
+and every query filters on it.
+
+## Reader seams
+
+Two external content sources are read through Protocol + Fake + Http
+seams, never called with raw HTTP from application code, and never
+hardcoded into this service's own storage:
+
+- `state_law_reader.py` — state-law-api's statute door
+  (`GET /v1/statutes/{jurisdiction}/{citation}`). A state process guide
+  lesson embeds a citation, not statute text, so the guide stays current
+  as the underlying law changes (ADR 0004).
+- `analysis_reader.py` — analysis-api's findings door
+  (`GET /cases/{case_id}/findings`). The suggestion engine reads finding
+  types through this seam; it never queries analysis-api's storage
+  directly.
+- `packs_reader.py` — packs-api's practice-area registry door
+  (`GET /internal/practice-areas/{key}`). Added 2026-08-31 (ADR 0004
+  addendum): `publish_module` rejects a `practice_area_key` packs-api
+  has never registered, closing a drift risk where this service
+  accepted any string. `jurisdiction` and `addresses_finding_types` are
+  not validated by this seam.
+
+All three seams follow the doorway contract (servicekit's `Rejected` /
+`Unavailable` / `call_with_retries`): a definitive rejection and a
+retry-exhausted unavailability are distinct, typed failures, and raw
+transport errors never escape to a caller.
+

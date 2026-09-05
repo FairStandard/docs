@@ -1,0 +1,61 @@
+---
+title: "4. Remaining owned-here content follows the versioned-partition idiom"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+CONTEXT.md named three more content types this service owns but had not
+yet built: court rules, process definitions, and pro bono eligibility.
+Each is jurisdiction-scoped, published-not-edited content, the same
+shape `DeadlineRuleSetVersion` already proved out (ADR 0002 addendum).
+
+## Decision
+
+Each new content type gets its own hash-partitioned-by-jurisdiction
+table, unpartitioned nowhere: `CourtRuleSetVersion` (unique on
+jurisdiction, court_level, version), `ProcessDefinitionVersion` (unique
+on jurisdiction, practice_area, version), and `ProBonoEligibilityVersion`
+(unique on jurisdiction, version). Every table follows the addendum's
+consistency rule — one idiom for every jurisdiction-partitioned,
+versioned content type in this service, not a case-by-case call on
+volume. A publish always inserts the next version; nothing is ever
+edited in place, so a superseded version stays readable for audit.
+
+Each table's content column (`sections`, `stages`, `criteria`) is a JSON
+list of records with an open `kind` (or `type`) string, not a closed
+enum, matching CONTEXT.md's "extensible data" framing — a new section
+kind, trigger kind, or criterion kind never needs a code change here.
+The publish door still runs light shape validation (required fields
+present, non-empty) — enough to reject a genuinely malformed publish
+without gatekeeping the vocabulary a state's content is free to use.
+`store.py`'s validators name this explicitly: `_validate_court_rule_section`,
+`_validate_process_stage`, `_validate_pro_bono_criterion`.
+
+`ProcessDefinitionVersion.stages` carries statute references as bare
+citation strings into the statute vault (`Statute.citation`) — a
+pointer, never a copy of statute text, so a statute update never
+requires a process-definition republish.
+
+## Consequences
+
+`GET /v1/process-definitions/{jurisdiction}/{practice_area}` is the read
+door learning-api's guides and case displays are expected to consume
+(CONTEXT.md); it is built here, the consumer is not.
+
+`GET /v1/pro-bono-eligibility/{jurisdiction}` names but does not build a
+seam: entitlements-api's pro-bono grants will consult this content later
+to decide whether a matter qualifies. This service stores and serves the
+criteria as data; it never evaluates a specific matter against them —
+that judgment belongs to the caller, same reasoning as ADR 0003.
+
+No new door reads or requires `X-Workspace-Id` — all three content types
+are shared content, scoped by jurisdiction (and, for the versioned two,
+practice area or court level) only, matching ADR 0003 unchanged.
+

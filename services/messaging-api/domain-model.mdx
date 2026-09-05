@@ -1,0 +1,87 @@
+---
+title: "Domain model"
+description: "The language of this service. One meaning per term; the avoid-lists keep the platform's shared vocabulary consistent with evidence-api, intake-api, and…"
+---
+
+The language of this service. One meaning per term; the avoid-lists keep
+the platform's shared vocabulary consistent with evidence-api, intake-api,
+and analysis-api.
+
+**Package**:
+An immutable, hash-verified bundle built from one root record and
+everything gathered around it up to the fixed traversal depth. The unit
+the recipient receives. Once finalized, a package never changes — a
+correction is a new package.
+_Avoid_: bundle, export, snapshot (bare), envelope
+
+**Snapshot**:
+The act of building a Package: reading the root item, walking outward to
+related items, and freezing what was found at that moment into one hashed
+graph. Snapshot is the verb; Package is the noun.
+_Avoid_: capture, sync
+
+**Node**:
+One item inside a Package's graph — the root record, an attachment, a
+client note, a related record, or a finding. Carries its own copied
+content and its own content hash, taken at snapshot time.
+_Avoid_: item, entry
+
+**Link**:
+A typed edge between two nodes saying how they relate (same thread,
+attachment of, annotated by, flagged by finding). Links carry no content.
+_Avoid_: relationship
+
+**Traversal depth**:
+How many link-hops out from the root the snapshot walks. Depth 0 is the
+root; depth 1 is the structural ring (attachments, thread, notes); depth
+2 is the analytical ring (findings, pattern groups). Fixed at two by
+ruling — never a client knob.
+_Avoid_: level, radius
+
+**Review gate**:
+The backend check that requires the client to see every node a traversal
+picked up, and drop any they don't want to send, before a Package can be
+finalized. A hard contract, not a preference.
+_Avoid_: consent screen, approval
+
+**Vault**:
+The recipient-side read surface of Packages for a case — read-only, one
+entry per delivered Package, each independently verifiable. The recipient
+is the case's representing professional (canon four-axis vocabulary).
+_Avoid_: inbox
+
+**Package hash**:
+The SHA-256 over the Package's canonical JSON (included nodes, links,
+root, traversal settings — never the excluded list), computed only on the
+server at finalize. The chain-of-custody proof, re-verifiable by anyone
+at any time.
+_Avoid_: checksum, digest
+
+**Note**:
+A short free-text annotation a sending party attaches to a record, stored
+here because notes exist to travel inside Packages.
+_Avoid_: comment, memo
+
+**Draft**:
+The un-finalized result of one traversal run, held briefly so the review
+gate can prune it. Drafts expire; nothing about an unsent draft is kept.
+_Avoid_: pending package, cart
+
+**Workspace scoping**:
+Every read and write is filtered by the workspace first (X-Workspace-Id
+header), same as every other service here. The caller's identity and
+case relationship come from their bearer token, verified against
+identity-api's real `/internal/verify` door on every call (ADR 0006) —
+never from an asserted header.
+_Avoid_: tenant, org
+
+**IdentityReader**:
+The seam to identity-api (`identity.py`, ADR 0006): given a bearer
+token, `verify` returns the caller's user id and their live case
+relationships from the case-team record. `HttpIdentityReader` speaks the
+real door; `FakeIdentityReader` keeps the same promise in memory for
+tests. The relationship VALUE is identity's registry data, checked at
+identity's own write time — this service never re-validates it, only
+decides which end of the delivery it sits on (`relationships.py`).
+_Avoid_: auth client, token verifier
+

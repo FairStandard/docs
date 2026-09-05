@@ -1,0 +1,108 @@
+---
+title: "5. Subscription billing lives here too; one Invoice table with a kind, not two"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted. Amends ADR 0001: that ADR's line "no model, table, or door for
+... platform charges" is superseded by this ADR. ADR 0001's actual load-
+bearing rule — entitlement *state* (what an org is entitled to access:
+tiers, add-on flags) never lives here — still stands and is unchanged.
+
+## Context
+
+FS-910 names this service "the home of subscription billing, including
+future marketplace listing fees," and states plainly: "org always pays
+platform charges; clients pay legal invoices." ADR 0001, written earlier
+in the same land, drew the boundary one line too wide — it excluded
+*all* platform charges, not just entitlement state, from this service.
+That's wrong: a platform charge is money owed, which is exactly this
+service's job; an entitlement flag is a different thing this service
+still has no business holding.
+
+Two payers already exist in this service's model: a client owes an
+`Invoice`, and a workspace draws down a `RetainerAccount`. A third payer
+— the workspace owing FairStandard for a subscription — is the same
+shape of fact (someone owes a `Money` amount, moving through
+draft/sent/paid) with a different payer and no case or client behind
+it.
+
+marketplace-api needs a real answer to "does this listing have an
+active subscription" (its `BillingReader` seam, currently only a
+`Protocol` and a `FakeBillingReader` — see
+`marketplace-api/billing_reader.py`). That answer has to come from
+somewhere workspace-scoped subscriptions actually live, which is here.
+
+## Decision
+
+One `Invoice` table, with a new `kind` registry field (`"client"` |
+`"platform"`) and a new nullable `subscription_id`. A client invoice
+still requires `case_id` and `client_reference_id`; a platform invoice
+sets neither (there is no case or client behind a subscription charge)
+and instead names the `Subscription` it was generated for.
+
+Why one table and not two:
+
+- **The deletion test.** Delete `kind` from `Invoice` and ask what
+  breaks: every door that lists, sends, voids, or pays an invoice would
+  need to exist twice, doing the same thing, or a shared base class
+  would reinvent `kind` under a different name. The lifecycle (draft ->
+  sent -> paid, void instead of delete) is identical for both kinds —
+  duplicating it doubles the surface for a bug without buying any real
+  separation.
+- **The one place a real difference exists — money movement — is
+  already a hard boundary, enforced in code, not by table choice.**
+  `Store.pay_invoice_from_retainer` refuses `kind="platform"` outright
+  (`RetainerNotApplicableToPlatformInvoice`): client trust funds can
+  never pay a platform charge. That is the actual risk ADR 0001 was
+  protecting against, and it doesn't need two tables — it needs one
+  `if`.
+- **A public door never creates a platform invoice.** `POST /invoices`
+  has no `kind` field; every platform `Invoice` is written by
+  `Store.run_billing_cycle` alone. A caller cannot invent a platform
+  charge by passing the wrong string, the way a two-table design could
+  still be corrupted by the wrong cross-reference.
+
+`Subscription` is its own table (workspace-scoped): `kind` (registry:
+`platform-tier` | `marketplace-listing`), `subscribed_ref` (the tier id
+or marketplace listing reference — the lookup key `BillingReader`
+needs), `price_cents` + `currency`, the billing period as data
+(`period_unit` + `period_interval`, not a hardcoded cadence),
+`status` (registry: `active` | `past-due` | `canceled`), and the
+running `current_period_start` / `current_period_end` anchors.
+
+`Store.run_billing_cycle(*, now: datetime)` is a deterministic function,
+not a scheduler: given an instant, it finds subscriptions whose period
+has ended, generates a platform invoice for each (or moves the
+subscription to `past-due` if its prior invoice is still unpaid), and
+advances the period by exactly one length — never more than one
+invoice per subscription per call, so a caller running this on a
+regular cadence catches up incrementally rather than the function
+guessing how many periods to backfill. `POST /billing-cycle/run` is the
+door an external cron (not built in this land) or an operator calls;
+this service still runs no scheduler of its own.
+
+`Store.has_active_subscription(workspace_id, subscribed_ref)` is the
+real door behind marketplace-api's `BillingReader` seam
+(`GET /subscriptions/lookup/active`), returning the same bool shape
+`FakeBillingReader.has_active_subscription` already returns.
+
+## Consequences
+
+A bug in client invoicing and a bug in platform billing can still
+collide inside one table, which two tables would have prevented
+structurally. That risk is accepted because the one place it matters —
+money moving out of a client's trust funds — is closed by a store-level
+guard and a test, not by hoping table separation alone would have
+caught it; a duplicated invoice lifecycle would have been the same risk
+spread across twice the code. `run_billing_cycle` is the one door in
+this service that reads and writes across every workspace at once
+rather than one workspace at a time — a deliberate, narrow exception to
+the workspace-scoping rule, justified because that's exactly what a
+cron sweep is. `has_active_subscription` stays workspace-scoped like
+every other door, keyed by `subscribed_ref` within the calling
+workspace.
+

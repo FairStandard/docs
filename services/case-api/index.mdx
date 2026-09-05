@@ -1,0 +1,61 @@
+---
+title: "case-api"
+sidebarTitle: "Overview"
+description: "The FairStandard case foundation store — cases (caption, number, court, parties, phase), court orders, and the docket (the event register of filings,…"
+---
+
+The FairStandard case foundation store — cases (caption, number, court,
+parties, phase), court orders, and the docket (the event register of
+filings, hearings, and service, each with a result and notes). Own
+Postgres, own service, workspace-scoped throughout.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push and
+pull request.
+
+## Architecture
+
+- `models.py` / `store.py` — the case foundation store: `Case`,
+  `CaseParty`, `CourtOrder`, `DocketEntry`, all on the service's own
+  Postgres, every query scoped by `workspace_id`.
+- `packs.py` — the `PacksReader` seam to practice-area phase vocabulary
+  (ADR 0002): `HttpPacksReader` reads packs-api's live current-pack door;
+  `FakePacksReader` mirrors the same strict contract for tests.
+- `main.py` — the internal HTTP surface, workspace-scoped by the
+  `X-Workspace-Id` header.
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Out of scope this wave
+
+Case-team records (IDENTITY owns them), deadlines (own service later),
+and cooperation/violations plus discovery tracking (later slices on this
+repo). See ADR 0001.
+
+## Status
+
+Cases, court orders, and the docket are readable and writable, all
+workspace-scoped. A case carries its `practice_area` (a registry string),
+and `phase` is validated at the door against that practice area's pack
+lifecycle vocabulary through the wired `HttpPacksReader` — an unknown
+phase, or a practice area with no published pack, is a 422. Migrations
+are real alembic (`uv run alembic upgrade head` against
+`CASE_DATABASE_URL`), exercised both directions by
+`tests/test_migrations.py`.
+

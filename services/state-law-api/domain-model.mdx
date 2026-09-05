@@ -1,0 +1,123 @@
+---
+title: "Domain model"
+description: "The language of this service. One meaning per term."
+---
+
+The language of this service. One meaning per term.
+
+**Jurisdiction**:
+A state or territory this service holds content for, identified by a
+short code (e.g. "TX"). The partition key for every piece of content
+this service stores. Registered in the jurisdiction registry before its
+content is uploaded; onboarding one is a data upload, never a
+deployment (ADR 0001).
+_Avoid_: state (not every jurisdiction FairStandard will eventually
+cover is a US state), tenant (that word means workspace elsewhere in the
+platform and means nothing here)
+
+**Statute**:
+One codified law section: a citation, a title, a body, and the dates it
+was in effect. The first content type this service holds. Partitioned
+by jurisdiction, keyed uniquely by (jurisdiction, citation).
+_Avoid_: rule (reserved for court rules, a distinct content type below),
+provision (too generic — citation is the identifying word here)
+
+**Citation**:
+The human-readable locator for one statute within a jurisdiction (e.g.
+"Fam. Code 6.001"). The read doors search and fetch by citation, never
+by the surrogate row id — the id exists only so Postgres has a stable
+key, callers never see or pass it.
+_Avoid_: reference (relations-api owns that word for a different
+concept: a (type, id) pair naming a thing another service owns)
+
+**Bulk load / content upload**:
+The onboarding door: a jurisdiction's statutes (or, later, its court
+rules) arrive in one batch and are loaded via `asyncpg` COPY into the
+statute table, same shape as relations-api's edge bulk-load. Idempotent
+— uploading the same statute twice writes it once.
+_Avoid_: import (intake-api owns that word), migration (this is content
+arriving, not a schema change)
+
+**Jurisdiction registry**:
+The list of jurisdictions this service currently holds content for,
+served as data via `GET /v1/jurisdictions`. Extensible by row insert —
+adding a new state to the platform never requires a code change here.
+_Avoid_: catalog, directory (registry is the platform's established word
+for this shape of list)
+
+**Deadline rule**:
+One piece of content the deadline engine (deadlines-api) evaluates: a
+trigger (a case-event kind, or another deadline rule's own due date, for
+chaining), an offset (calendar-day or business-day arithmetic, before or
+after), and optional conditions. Content, never hardcoded logic —
+mirrors deadlines-api's `DeadlineRule` field-for-field so a publish is a
+direct translation. Versioned per (jurisdiction, practice area); the
+current rule set is whichever published version has the highest
+`version`. See ADR 0002.
+_Avoid_: rule (bare — this service reserves "rule" alone for court
+rules, a distinct content type below), policy
+
+**Deadline rule set**:
+One published, versioned batch of deadline rules for one (jurisdiction,
+practice area). A publish never edits a row — it inserts the next
+version, so a superseded rule set stays readable for audit.
+_Avoid_: ruleset (one word — this service always writes it as two)
+
+**Holiday**:
+One non-business day for one jurisdiction — part of the business-day
+calendar the deadline engine's `evaluate()` needs and never hardcodes.
+Content, uploaded and updated independently of the rule sets that
+reference it, so next year's holidays land without a republish.
+_Avoid_: closure, non-business day (bare)
+
+**Court rule set**:
+One published, versioned batch of procedural rules a court issues (e.g.
+Texas Rules of Civil Procedure) for one (jurisdiction, court level) —
+filing requirements, service methods, and notice rules as structured
+content sections. Distinct from statutes (legislated law) and from
+deadline rules (which are *derived from* court rules and statutes but
+are not the rules' full text). Versioned per (jurisdiction, court
+level); the current rule set is whichever published version has the
+highest `version`. See ADR 0004.
+_Avoid_: rule (bare — reserved for deadline rules), statute (a court
+rule is procedural, issued by the court, not legislated)
+
+**Process definition**:
+One published, versioned sequence of stages a filing or motion moves
+through in one jurisdiction's practice area — what triggers each
+transition and which statutes it references. Content the deadline
+engine never evaluates; the read door is for learning-api's guides and
+case displays. Versioned per (jurisdiction, practice area). See ADR
+0004.
+_Avoid_: workflow (this service holds the definition as content, never
+executes it), stage (bare — always "process stage" to keep it apart from
+a case's own status)
+
+**Pro bono eligibility**:
+One published, versioned batch of criteria — income thresholds,
+case-kind rules — that decide whether a matter in one jurisdiction
+qualifies for pro bono representation. Content, not a decision: this
+service serves the criteria as data; entitlements-api's pro-bono grants
+are the intended future consumer that evaluates a specific matter
+against them (seam named, not built — ADR 0004). Versioned per
+jurisdiction.
+_Avoid_: entitlement (that judgment belongs to the caller, never made
+here)
+
+## Access discipline
+
+State law is shared content, not workspace-owned data (ADR 0003). No
+door on this service reads or requires `X-Workspace-Id`. Access is
+scoped by jurisdiction only.
+
+## practice_area is validated, not free-text
+
+Added 2026-08-31 (ADR 0005). `practice_area` on `DeadlineRuleSetVersion`
+and `ProcessDefinitionVersion` publishes is checked against packs-api's
+practice-area registry through the `PacksReader` seam
+(`packs_reader.py`) before the publish writes anything — an
+unregistered `practice_area` is rejected with a `422`. This is this
+service's first outbound HTTP call; every other content type
+(statutes, holidays, court rules, pro bono eligibility) is unaffected.
+See `packs-api`'s own CONTEXT.md for the registry itself.
+

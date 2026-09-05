@@ -1,0 +1,107 @@
+---
+title: "Domain model"
+description: "The attorney/provider directory: public listings with social profiles, discovery by specialty/jurisdiction/service kind, and the consultation request queue…"
+---
+
+The attorney/provider directory: public listings with social profiles,
+discovery by specialty/jurisdiction/service kind, and the consultation
+request queue that hands a match off to the rest of the platform. It
+does not decide whether a listing's org can afford to pay for it
+itself — it asks billing-payments-api's subscription-read door
+(`billing_reader.py`), does not run full-text search (search-api will —
+ADR 0001), and does not itself create a case, a message thread, or an
+identity link when a request is accepted (`handoff.py`'s three Fake
+seams stand in for those doors).
+
+## Language
+
+**Listing**: One org's public presence for one attorney/provider.
+`provider_ref` names the person by an external identity-api reference —
+this service keeps no local copy of who they are, only that a listing
+exists for them. `status` (`draft`, `active`, `inactive`) is a registry
+string, never a Python enum (canon cap-marketplace.yaml,
+audience-vocabulary-extensibility). Org-scoped: every listing query
+filters by `workspace_id` AND `org_id` — a listing belonging to another
+org is invisible, not just unauthorized. See models.py, store.py.
+_Avoid_: attorney, provider (bare — a `Listing` is the marketplace
+*presence*, not the person; the person is identity-api's)
+
+**Profile**: The social profile attached 1:1 to a `Listing` — display
+name, headline, biography, and three registry-backed vocabulary lists
+(specialties, jurisdictions, service kinds), plus a free-form `sections`
+blob for whatever else a provider wants to show (packs-api's same
+extensible-content-sections shape). See models.py.
+_Avoid_: bio (bare — `biography` is the field name; "bio" invites
+confusion with `Listing`)
+
+**Specialty / Service kind**: The two open vocabularies discovery
+filters on. Registry tables (`Specialty`, `ServiceKind`), seeded
+idempotently from `registry_seed.json` — extending either is an insert,
+never a code change (canon cap-marketplace.yaml). Jurisdiction is
+deliberately NOT a registry here — see registries.py and ADR 0001.
+_Avoid_: practice area (use "specialty," the canon term), category
+
+**Consultation request**: One ask to talk to a listed attorney/
+provider. `requester_ref` is a free-form external reference; nothing on
+`ConsultationRequest` requires a case, an org, or an engagement — canon's
+"a valid state is having NO case" applies to requesters exactly as it
+does to cases. `status` (`queued`, `accepted`, `declined`) drives the
+queue lifecycle. See models.py, store.py.
+_Avoid_: booking, appointment (too specific — a request is an ask, not
+yet a scheduled meeting)
+
+**Handoff**: The fact recorded when a request is accepted — who
+(`requester_ref`), which listing, which request, when
+(`ConsultationHandoff`, models.py) — plus three seam calls
+(`handoff.py`) toward identity-api, case-api, and messaging-api. All
+three are `Fake`-only this wave (ADR 0002); the handoff row is
+persisted regardless of what those seams do.
+_Avoid_: match, connection (too vague — "handoff" names the specific
+moment of transfer to downstream services)
+
+**Discovery**: The public, unauthenticated read of active listings
+(`GET /public/listings`) — no `X-Workspace-Id` header, no tenant at all.
+Filters by specialty/jurisdiction/service kind against this service's
+own Postgres for now (ADR 0001). Only ever serialized through
+`serialize_public_listing`, which never emits `subscription_ref`,
+`workspace_id`, or `org_id`.
+_Avoid_: search (this is filtered listing, not full-text search — see
+ADR 0001 for why full-text search is search-api's job, not this
+service's)
+
+**BillingReader**: The seam to billing-payments-api's subscription-read
+door (ADR 0003). `Protocol` with two adapters — `HttpBillingReader`
+against the real door, `FakeBillingReader` for tests.
+_Avoid_: subscription client, payment reader
+
+**Workspace**: The tenant boundary `Listing`, `ConsultationRequest`, and
+`ConsultationHandoff` carry. Every manage/queue door is workspace- and
+org-scoped; discovery and request-submission carry none at all — see
+"Public discovery has no tenant," below.
+
+## Public discovery has no tenant
+
+Every other door in this service takes `X-Workspace-Id` and filters by
+it (`main.py`'s `WorkspaceId` dependency). `GET /public/listings` and
+`POST /public/listings/{id}/requests` do not — they have no
+`X-Workspace-Id` parameter at all, and the store methods behind them
+(`discover_listings`, `create_request`) never accept a `workspace_id`
+argument from the caller. This is deliberate, not an oversight:
+
+- A client or self-represented party browsing the directory has no
+  workspace yet — canon's "a valid state is having NO case" extends to
+  having no tenant at all.
+- `create_request`'s `workspace_id` on the stored row comes from the
+  listing being requested (`listing.workspace_id`), never from the
+  caller — a public caller cannot forge which org's queue a request
+  lands in.
+- The two serializers used on these doors (`serialize_public_listing`)
+  never touch `subscription_ref`, `workspace_id`, or `org_id` — private
+  fields are excluded by construction, not by a runtime filter that
+  could be forgotten on a new field. `tests/test_api.py`'s
+  `test_discovery_never_leaks_private_fields` asserts this directly.
+
+This is the same access discipline files-api documented for its own
+tenant-free doors: the absence of a workspace header is the point, not
+a gap to fill in later.
+

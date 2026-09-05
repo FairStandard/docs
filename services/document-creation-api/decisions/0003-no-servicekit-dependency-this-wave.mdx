@@ -1,0 +1,77 @@
+---
+title: "3. No servicekit dependency this wave"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Some sibling services (intake-api's `HttpFilesReader`, for example) wrap
+their downstream HTTP calls with `servicekit`'s `call_with_retries`,
+`Rejected`, and `Unavailable` helpers. case-api ruled against pulling
+servicekit in for its wave (its ADR 0003) and stayed on plain `httpx`.
+
+document-creation-api has exactly one downstream call today — case-api,
+through the CaseReader seam, for caption facts — and it is read-only and
+non-critical: `main.py` already treats a case lookup failure
+(`CaseNotFound`) as "render the draft without a caption," not as a hard
+error. There is no retry-and-surface-a-typed-rejection need yet that
+servicekit's wrapper exists to solve.
+
+## Decision
+
+`HttpCaseReader` uses a plain `httpx.AsyncClient` with no retry wrapper.
+`CaseReaderError` / `CaseNotFound` are this service's own exception types,
+not servicekit's `Rejected` / `Unavailable`. No `servicekit` dependency is
+added to `pyproject.toml`.
+
+## Consequences
+
+CI does not need the `SERVICEKIT_TOKEN` git-config step that services
+depending on the private `servicekit` package require. If a second
+downstream call is added later that needs real retry-with-backoff
+semantics, that is the point to revisit this ADR and add servicekit —
+not before.
+
+## Revisited (2026-08-31, servicekit adoption sweep, FS-953)
+
+servicekit 0.2.0 added `doorway_errors`, a factory that would replace
+`CaseReaderError`/`CaseServiceUnavailable`'s hand-written shape with two
+lines. Reassessed honestly against the actual diff, not just "servicekit
+now has the helper":
+
+- `doorway_errors` retries every attempt through `call_with_retries`
+  (3 attempts, backoff with jitter, by default). This reader today makes
+  one attempt per call and lets a failure surface immediately as
+  `CaseServiceUnavailable`, which `main.py` treats as "render the draft
+  without a caption." Adding retries here would triple the latency of
+  that degrade path on a real case-api outage — the opposite of what a
+  best-effort, non-critical read wants. Passing `retries=1` to neutralize
+  it would keep the behavior but make the adoption pure ceremony with
+  none of the value.
+- `Rejected` carries `status_code`/`detail`, not a `CaseNotFound` domain
+  type. This reader's 404-vs-other-failure distinction (`CaseNotFound`
+  vs `CaseServiceUnavailable`) would still need hand-written wrapping on
+  top of the kit's `Rejected` — the adoption would not delete that
+  ceremony, only relocate it.
+- Two sequential calls (case, then parties) both need this same
+  wrapping, so the "delete boilerplate" case is weaker than a
+  single-call reader's.
+
+Conclusion unchanged: still no servicekit dependency. The decision above
+holds — not because it hasn't been reassessed, but because reassessing
+it found the same answer for a new reason (doorway_errors' shape doesn't
+fit a best-effort, no-retry-wanted reader), not just the original one
+(the helper didn't exist yet).
+
+The same sweep also weighed `servicekit.fastapi`'s WorkspaceId header
+dependency against `main.py`'s hand-rolled `Header(alias="X-Workspace-Id")`
+annotation: one annotation does not justify a pinned git dependency
+(the same call identity-api recorded in its ADR 0004). Adopt it if this
+service ever grows enough doors for the shared DI to earn its keep.
+

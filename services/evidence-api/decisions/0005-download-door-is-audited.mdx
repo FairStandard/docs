@@ -1,0 +1,94 @@
+---
+title: "5. The download door is presigned, case-scoped, and audited"
+description: "Date: 2026-08-31"
+---
+
+Date: 2026-08-31
+
+## Status
+
+Accepted
+
+## Context
+
+files.py's Files seam has always exposed `exists`, `get_bytes`,
+`presign_download`, and `ensure_bucket` — only `make_key` and
+`presign_upload` had a door. Christopher approved wiring the rest
+(2026-08-31): a caller who already holds a key needs a way to read the
+file back, without this service ever proxying bytes.
+
+Two questions had to be answered honestly rather than assumed.
+
+**What does "a registered file" mean here?** There is no file ledger
+table — `models.py` has `Record`, `AuditEntry`, `AuditHead`, nothing
+else. CONTEXT.md says this context "owns the ledger of what exists and
+where," but that ledger doesn't exist yet; building one is a separate,
+larger change (it would touch the upload flow too), not something to
+smuggle into a read door. So "registered" is answered with what the
+service actually has: the key layout embeds `workspace_id` and
+`case_id` (`_KeyLayout.make_key`), and `Files.exists` confirms the
+object is real. A key is "registered" if it was minted for this
+workspace and case, and something was actually put at it. Anything
+stronger is future work, not this door's job.
+
+**Should a download append to the audit chain?** ADR 0002 (insert-only)
+has no objection — an audit append is an insert. Where uploads differ
+from downloads: for an upload, intake owns the whole flow and appends
+the audit entry itself, from outside this service, because intake is
+the party that knows the upload actually happened. For a download,
+this service is the only party that knows a URL was issued at all — the
+caller fetches the bytes directly from the bucket, never through this
+API. So the door appends server-side, on the same call that mints the
+URL.
+
+That asymmetry has one honest limit worth stating plainly: the seal
+this door writes attests that **a presigned URL was issued**, not that
+anyone fetched the bytes with it. A URL can expire unused. Calling the
+audit action `"downloaded"` keeps the existing past-tense vocabulary
+(`uploaded`, `parsed`, `linked`) consistent, but the fact it records is
+"access was granted," not "bytes moved."
+
+## Decision
+
+`GET /internal/cases/{case_id}/files/presign-download` — workspace via
+the standard header, `key` and `actor` as query params, `file_hash`
+optional (passthrough, same as `AuditAppend`).
+
+1. Check `files.is_case_key(workspace, case_id, key)` — a new
+   `Files` protocol method, one line, living beside `make_key` in
+   `_KeyLayout` so both adapters get it for free and the bucket layout
+   stays inside the seam (main.py never re-derives the key format).
+2. Check `files.exists(key)`.
+3. Either failure returns `404`, with no distinguishing detail — a
+   caller cannot tell "wrong workspace," "wrong case," and "never
+   existed" apart. No audit entry is written for a denied or absent
+   request; only a real, in-scope key gets a chain entry.
+4. On success: `store.append_audit(action="downloaded", evidence_id=key,
+   actor=actor, file_hash=file_hash)`, then `files.presign_download(key)`,
+   returned as `{"url": ...}`.
+
+Audit append happens before presigning and is not caught — if it
+raises, the request fails with no URL handed out. Audited access with
+no URL is a bug to fix; a URL with no audit entry is the thing this
+door exists to prevent.
+
+`get_bytes` and `ensure_bucket` stay door-less. A `get_bytes` door
+would proxy bytes through the API, which the presigned-URL law
+forbids outright. `ensure_bucket` is provisioning
+plumbing - today nothing calls it at startup (the bucket is provisioned
+out-of-band; tests call it directly), and it is not something a caller
+ever needs to invoke over HTTP.
+
+## Consequences
+
+Any service holding a key from `presign-upload` (or from `RecordIn` /
+audit history, once something starts carrying keys there — it doesn't
+yet, see ADR 0004) can now read a file back without this API touching
+the bytes, and every such read is on the chain. The gap this door does
+not close: there is still no file ledger, so "does this key exist"
+is answered by the bucket and the key's own shape, not by a database
+row this service controls. If a future change adds a file table (the
+natural home for a real registration event, distinct from "someone
+issued a download URL for it"), this door's checks 1 and 2 are the
+first two things to reconsider against it.
+

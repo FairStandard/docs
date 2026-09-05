@@ -1,0 +1,77 @@
+---
+title: "messaging-api"
+sidebarTitle: "Overview"
+description: "The FairStandard messaging service — marketplace and case communication between the people on a case. Its first feature is the send-context flow: a sending…"
+---
+
+The FairStandard messaging service — marketplace and case communication
+between the people on a case. Its first feature is the send-context flow:
+a sending party picks one record and the service snapshots everything
+around it — attachments, the thread, their notes, and what the analysis
+system already flagged — into one immutable, hash-proven Package. The
+sender prunes it on the review screen before anything leaves; the case's
+representing professional receives it in a read-only vault and can
+re-verify every piece against the permanent record at any time. Who
+relates to a case how comes from the platform's case-relationship
+vocabulary, never from personas.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+Configuration is environment-driven under the `MESSAGING_` prefix
+(`settings.py`). Migrations are real alembic — `uv run alembic upgrade
+head` against the same `MESSAGING_DATABASE_URL`; the chain is exercised
+both directions by `tests/test_migrations.py`.
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+## Architecture
+
+- `traversal.py` — the deterministic two-ring snapshot walk (ADR 0004):
+  structural from evidence, analytical from analysis findings.
+- `sealing.py` — canonical JSON and the package hash; the excluded
+  list never enters the hash input. (Renamed from `packaging.py`, which
+  shadowed the PyPI `packaging` library.)
+- `gate.py` — the review gate's law, enforced server-side: sender-only
+  build and finalize, the root can never be pruned out, delivery lands
+  one entry in the evidence audit chain, and a package becomes readable
+  only once that proof is anchored onto it.
+- `relationships.py` — messaging-api's own SENDER/RECIPIENT flow-structure
+  split (canon four-axis model); the relationship vocabulary itself is
+  identity-api's registry, not a local copy (ADR 0006).
+- `identity.py` — the seam to identity-api's real `/internal/verify` door:
+  who a bearer token verifies as and their case relationships, live.
+- `store.py` / `models.py` — insert-only Packages, expiring Drafts
+  (purged for real, not just hidden), and Notes, on the service's own
+  Postgres.
+- `upstream.py` — the doorways to evidence-api and analysis-api, with
+  in-memory twins for tests.
+- `main.py` — the internal HTTP surface; workspace-scoped, with the
+  caller's identity and case relationship verified against identity-api
+  on every call (ADR 0006, superseding the ADR 0005 stand-in header).
+
+Decision records live in `docs/adr/`; the glossary in `CONTEXT.md`.
+
+## Status
+
+The backend round trip works end to end: draft → review-gate prune →
+finalize → audit-anchored delivery → attorney vault → verification.
+Real identity enforcement landed (ADR 0006): every door verifies its
+caller's bearer token against identity-api and reads their case
+relationship from the case-team record, not an asserted header. Still
+ahead: conversations and marketplace connections (the rest of
+messaging), the relations-service seam replacing the built-in walk,
+pattern-group nodes once analysis-api exposes them, and every UI
+surface — which waits on approved mockups before any implementation.
+

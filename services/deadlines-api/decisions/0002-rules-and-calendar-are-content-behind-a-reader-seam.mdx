@@ -1,0 +1,108 @@
+---
+title: "2. Rules and the calendar are content behind a reader seam"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (vision.md, locked-decisions.yaml) rules that anything
+practice-area-specific — lifecycle labels, and by the same logic,
+deadline rules and business-day calendars — comes from configuration,
+never hardcoded into a service. state-law-api is the service meant to
+own and validate deadline-rule content for each practice area and
+jurisdiction, but it does not yet have a deadline-rules HTTP surface to
+call — the same situation case-api was in with packs-api (its ADR 0002).
+
+The rule engine itself (engine.py) also needs to stay deterministic:
+given the same rule-set and the same case events, `evaluate()` must
+always produce the same proposals, with no hidden clock read and no
+hidden I/O.
+
+## Decision
+
+Rule content and the business-day calendar travel together as one
+`RuleSet` (`rules`, `calendar`), read through a `StateLawReader`
+Protocol with one method: `get_rule_set(practice_area)`. A
+`FakeStateLawReader` backs it for tests and local development today. No
+`HttpStateLawReader` exists yet, honestly — state-law-api has no
+deadline-rules endpoint to call. When it ships one, an
+`HttpStateLawReader` implementing the same Protocol is a drop-in
+addition behind this seam, wired into `main.py`'s lifespan the same way
+`HttpCaseReader` already is (see ADR 0003).
+
+`Deadline` rule content is expressed as small frozen dataclasses
+(`DeadlineRule`, `Offset`, `Condition`, `EventTrigger`, `RuleTrigger`,
+`Calendar`) rather than a raw dict, so the engine's contract is typed
+and checked, while still being data the reader hands in — nothing in
+`engine.py` constructs a rule itself. `evaluate()` takes `now` as a
+parameter and never calls a clock internally, so a re-run with the same
+`rule_set` and `events` is provably identical (`tests/test_engine.py::
+test_evaluate_is_deterministic`).
+
+Chained/conditional deadlines are expressed as a second rule whose
+trigger is `RuleTrigger(rule_id=...)` instead of `EventTrigger(...)` —
+its offset applies to the parent proposal's `due_at`, not to a raw
+event. This is a chain-at-propose-time model: chains materialize when
+`propose_for_case` runs, off whatever the parent's due date evaluates to
+at that moment. Re-evaluating a chain when its parent is later accepted,
+dismissed, or its due date changes is a real feature but a later slice —
+this ADR does not build it, so as not to guess at behavior nobody has
+ruled on yet.
+
+## Consequences
+
+deadlines-api ships this wave without blocking on state-law-api. Nothing
+about the engine's contract, the API shape, or existing tests changes
+when the Http adapter is added — only `main.py`'s lifespan wiring
+changes, and only additively. Production wiring today uses an empty
+`FakeStateLawReader()` (no seeded rule-sets) until either a
+deployment-time seed or the Http adapter lands — `propose_for_case` on
+an unconfigured practice area proposes nothing, which is honest, not
+silently broken.
+
+## Addendum (2026-08-30): the seam is now real, two adapters
+
+state-law-api shipped its deadline-rules HTTP surface (FS-893):
+`GET /v1/deadline-rule-sets/{jurisdiction}/{practice_area}`, returning
+rules plus the merged business-day calendar in one response. Two things
+changed, both anticipated by the original decision above:
+
+`get_rule_set` gained a `jurisdiction` parameter —
+`get_rule_set(jurisdiction, practice_area)` — because state law is
+jurisdiction-scoped by nature (a Texas Rules of Civil Procedure deadline
+does not apply in California); this was always implicit in "state-law-api
+is the service meant to own... deadline rules and business-day calendars
+for each practice area and jurisdiction" above, just not yet threaded
+through the Protocol's arity. `propose_for_case` and the propose HTTP
+route (`ProposeIn`) carry `jurisdiction` alongside `practice_area` the
+same way. `FakeStateLawReader.rule_sets` is now keyed by
+`(jurisdiction, practice_area)`.
+
+`HttpStateLawReader` now exists (`state_law_reader.py`), wired into
+`main.py`'s lifespan exactly as anticipated — an additive change,
+nothing about the engine's contract or the propose response shape moved.
+It speaks state-law-api's real door through servicekit's doorway
+contract, the same pattern `HttpCaseReader` uses. One case needed a
+deliberate decision beyond that pattern: state-law-api answers `404` for
+an unpublished (jurisdiction, practice_area), and the doorway contract
+would normally turn that into `Rejected(404, ...)`. `HttpStateLawReader`
+intercepts that specific case and returns `EMPTY_RULE_SET` instead —
+matching `FakeStateLawReader`'s behavior for an unseeded key, and
+preserving this ADR's original promise that an unconfigured practice
+area proposes nothing rather than raising. Every other 4xx/5xx still
+surfaces as `StateLawRejected` / `StateLawUnavailable`.
+
+`tests/test_state_law_reader.py` contract-tests `FakeStateLawReader` and
+`HttpStateLawReader` against the same rule-set data (including the
+404-is-empty case), the same shape as `tests/test_case_reader.py`.
+`tests/test_propose_via_http_state_law.py` drives `propose_for_case`
+end to end through `HttpStateLawReader`'s real wire shape instead of the
+Fake, including a chained rule and a holiday-adjacent business-day
+offset.
+

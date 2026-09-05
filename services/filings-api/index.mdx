@@ -1,0 +1,62 @@
+---
+title: "filings-api"
+sidebarTitle: "Overview"
+description: "The court WORKFLOW service: guided drafting passes, what-to-file-next recommendations, filing checklists, and service-of-documents tracking. Court prep tasks…"
+---
+
+The court WORKFLOW service: guided drafting passes, what-to-file-next
+recommendations, filing checklists, and service-of-documents tracking.
+Court prep tasks are ruled future scope (canon cap-court-prep) — nothing
+ships for them yet, and remaining build-out is tracked on the filings
+carve issue (FS-856: templates, guided-pass prompt content, declarations,
+statements). See `CONTEXT.md` for vocabulary and `docs/adr/` for the
+decisions behind the seams.
+
+It does not render documents (document-creation-api does, called through
+a seam) and does not own deadlines (deadlines-api), statutes
+(state-law-api), or practice config (packs-api). Every practice-area-
+specific rule — which filing type to recommend, what a filed document
+obliges next — arrives as content read through the PacksReader seam,
+never hardcoded.
+
+## Setup
+
+```sh
+uv sync --dev
+uv run pre-commit install
+```
+
+## Running the checks
+
+```sh
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+uv run pre-commit run --all-files
+```
+
+Tests spin up a real `postgres:18` container via testcontainers — Docker
+must be running.
+
+## Running the service
+
+```sh
+DATABASE_URL=postgresql+asyncpg://localhost:5432/filings uv run alembic upgrade head
+uv run fastapi dev main.py
+```
+
+Configuration (env-prefixed `FILINGS_`, see `settings.py`):
+
+- `FILINGS_DATABASE_URL`
+- `FILINGS_CASE_API_URL`
+- `FILINGS_PACKS_API_URL`
+- `FILINGS_DOCUMENT_CREATION_API_URL`
+
+## Migrations
+
+```sh
+uv run alembic revision --autogenerate -m "message"
+uv run alembic upgrade head
+```
+

@@ -1,0 +1,88 @@
+---
+title: "Domain model"
+description: "The intake context is the platform's front door for evidence: it receives uploads, works out what they are, parses them into records, and delivers the results…"
+---
+
+The intake context is the platform's front door for evidence: it receives
+uploads, works out what they are, parses them into records, and delivers the
+results to the evidence store. It keeps the paperwork of arrival — never the
+evidence itself.
+
+## Language
+
+**Upload**:
+The act of a file arriving through a signed link. The bytes land in the
+evidence store's bucket; intake tracks the act, not the bytes.
+_Avoid_: attachment, transfer
+
+**Import**:
+One received file and everything intake knows about it: its fingerprint,
+what kind of document it is, how parsing went, whether it was delivered.
+_Avoid_: upload record, file entry
+
+**Import session**:
+A batch of imports the user started together (a ZIP, a multi-file drop),
+with running counts of processed, failed, and duplicate files.
+_Avoid_: batch job, upload group
+
+**Fingerprint**:
+The SHA-256 of a file's bytes. Two files with the same fingerprint in the
+same workspace are the same file; the second is a duplicate.
+_Avoid_: hash (bare), checksum
+
+**Classification**:
+Intake's judgment of what a file MEANS (court document, call report,
+message log, recording...) regardless of its container. Deterministic
+rules from bytes and names decide first; an AI meaning tier (a later
+additive tier behind the same seam — not built yet) may decide only when
+the rules cannot.
+_Avoid_: detection, categorization
+
+**Processor**:
+The parser for one kind of import — turns a classified file into records.
+Runs inside files-api (FS-887); intake reaches it through the FilesReader
+doorway and hands its records to delivery.
+_Avoid_: handler, pipeline step
+
+**Delivery**:
+Sending parsed records and audit entries to the evidence store over its
+API. Delivery is idempotent: the store absorbs duplicates by content hash.
+_Avoid_: sync, export
+
+**Extraction**:
+Getting the records off a page. Deterministic processors extract first;
+the AI extraction tier reads the page itself only when validation fails.
+Distinct from Classification, which follows the same deterministic-first
+law.
+_Avoid_: parsing (when the AI tier is meant), scraping
+
+**Escalation**:
+What happens to a parse that fails validation: first the AI extraction
+tier, and if the result still fails, a flag for human review. Never a
+silent delivery.
+_Avoid_: fallback, retry
+
+**Ingest engine**:
+Intake's one front door. Every import goes through its pipeline —
+fingerprint, classify, extract, validate, resolve parties, deliver,
+audit — and the engine alone injects case and workspace identity.
+_Avoid_: pipeline (bare), orchestrator
+
+**Party resolution**:
+Rewriting the names, phone numbers, and handles a document printed to the
+canonical parties the case knows. Unknown values pass through unchanged —
+nothing is invented.
+_Avoid_: entity matching, identity resolution
+
+**Evidence store**:
+The service that permanently owns records, files, and the audit chain —
+one of intake's two downstreams. Written through its API only.
+_Avoid_: database, archive
+
+**files-api**:
+The service that owns byte-level format detection and deterministic
+container parsing (FS-887) — intake's other downstream, reached through
+`files_reader.py`. Never does model reasoning; the AI extraction tier
+stays here, in intake.
+_Avoid_: parser service, extraction service
+

@@ -1,0 +1,51 @@
+---
+title: "3. Case events arrive through a doorway to case-api"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The rule engine evaluates case events, and case-api already owns the
+docket — the event register of everything that happened in a case
+(case-api's own CONTEXT.md). deadlines-api does not duplicate that data;
+it reads it. Unlike case-api's own PacksReader situation (its ADR 0003,
+"no servicekit dependency this wave"), this is exactly the doorway case
+that ADR anticipated: a real outbound call, at request time, into
+another service's private data, and case-api already has an HTTP surface
+to call (`GET /internal/cases/{case_id}/docket`).
+
+## Decision
+
+`servicekit`'s doorway contract (`call_with_retries`, `Rejected`,
+`Unavailable`) is added as a dependency, pinned by git rev the same way
+intake-api pins it for its own doorways (`files_reader.py`). `CaseReader`
+is a Protocol with one method, `list_events(workspace_id, case_id)`,
+returning the engine's normalized `CaseEvent` — not case-api's raw
+docket-entry shape. `HttpCaseReader` calls case-api's real internal API:
+`GET /internal/cases/{case_id}/docket` with the `X-Workspace-Id` header,
+paging through `limit`/`offset` until it has every entry
+(`DOCKET_PAGE_SIZE = 500` per page) rather than assuming one page is
+enough. `FakeCaseReader` keeps the same promise in memory for tests.
+
+A docket entry's `kind` becomes an event's `kind`; `occurred_at` and
+`result` pass through unchanged (parsed from ISO 8601 on the Http side).
+`tests/test_case_reader.py` contract-tests both adapters against the
+same `httpx.MockTransport`-served payload and asserts they agree —
+`FakeCaseReader` and `HttpCaseReader` must produce identical
+`CaseEvent`s from equivalent data.
+
+## Consequences
+
+A case-api outage surfaces to deadlines-api's caller as `CaseUnavailable`
+after the retry budget, or `CaseRejected` for a definitive 4xx — never a
+raw `httpx` exception. `propose_for_case` needs case-api to be reachable;
+there is no cached/stale fallback in this slice. If that gap matters
+before a later slice addresses it, that is a product call for
+Christopher, not an engineering default to invent here.
+

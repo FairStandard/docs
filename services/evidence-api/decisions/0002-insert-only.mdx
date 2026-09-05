@@ -1,0 +1,12 @@
+---
+title: "The store is insert-only"
+description: "Records, file entries, and audit entries are never updated or deleted through this service's interface — there are no update or delete doors at all, which is…"
+---
+
+Records, file entries, and audit entries are never updated or deleted
+through this service's interface — there are no update or delete doors at
+all, which is what makes the evidence trustworthy in court. Duplicate
+writes are absorbed by the content-hash constraint and reported, not
+errored. Corrections happen the way they do in a court record: by adding a
+new entry that says so.
+

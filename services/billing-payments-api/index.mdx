@@ -1,0 +1,93 @@
+---
+title: "billing-payments-api"
+sidebarTitle: "Overview"
+description: "FairStandard's client-facing legal billing service: invoices, retainer trust accounting, and billable time capture. Deliberately separate from platform…"
+---
+
+FairStandard's client-facing legal billing service: invoices, retainer
+trust accounting, and billable time capture. Deliberately separate from
+platform entitlements — the org always pays the platform, clients pay
+legal invoices, and these are two different billing lifecycles (see
+`docs/adr/0001-a-separate-billing-lifecycle-from-entitlements.md`).
+
+See `CONTEXT.md` for the domain glossary and `docs/adr/` for the design
+decisions behind the trust ledger and the two provider seams.
+
+## What's here
+
+- **Invoices** — draft/sent/paid/void as data, lines, totals in integer
+  cents. No delete door; void instead.
+- **Retainer trust accounting** — an append-only ledger; the balance is
+  always derived (`SUM(signed_cents)`), never stored. Paying an invoice
+  from retainer draws the trust ledger and marks the invoice paid in one
+  atomic transaction.
+- **Time capture** — automatic ingestion from other services' work
+  signals (a Redis-stream consumer, `consumer.py`) plus a direct manual
+  door.
+- **Two Protocol + Fake seams** — `payments.py` (recording a payment;
+  charging a card is out of scope) and `accounting.py` (syncing to
+  external accounting software; not built yet). No real implementation
+  of either ships in this land.
+
+## Rebuilding the environment from a clean clone
+
+```bash
+uv sync --locked --dev
+uv run pytest -q            # spins up Postgres + Redis via testcontainers (needs Docker)
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+`servicekit` is a private git dependency (`[tool.uv.sources]` in
+`pyproject.toml`, pinned to a specific commit). `uv sync` needs read
+access to `github.com/FairStandard/servicekit` — locally this comes from
+your own git credentials; in CI it comes from `SERVICEKIT_TOKEN`.
+
+## Running it
+
+```bash
+uv run fastapi dev main.py       # the HTTP doors
+uv run python consumer.py        # the time-capture stream consumer, run alongside it
+```
+
+Every door is workspace-scoped: send `X-Workspace-Id` on every request.
+The one exception is `POST /billing-cycle/run`, which deliberately
+crosses workspaces (ADR 0005): it requires `X-Cycle-Token` to match the
+configured `BILLING_CYCLE_TOKEN` (empty token = door disabled) and it
+always runs at the server's own clock (ADR 0007).
+
+Configuration is environment-driven (`settings.py`, `BILLING_` prefix) —
+see `Settings` for `BILLING_DATABASE_URL`, `BILLING_REDIS_URL`,
+`BILLING_CYCLE_TOKEN`, and the stream/group names. Migrations run with
+`uv run alembic upgrade head` against the same `BILLING_DATABASE_URL`.
+
+## Architecture
+
+```
+main.py        FastAPI doors: invoices, retainer accounts, time entries
+consumer.py     Stream consumer entrypoint: work signals -> TimeEntry rows
+store.py        All DB access: invoice lifecycle, trust ledger, time entries
+models.py       SQLModel tables
+registry.py     Registry strings (status/kind vocab), Money, LedgerSource
+queueing.py     WorkSignal + codec + TimeCaptureStream (servicekit.StreamQueue)
+payments.py     PaymentProvider Protocol + FakePaymentProvider
+accounting.py   AccountingSync Protocol + FakeAccountingSync
+settings.py     Environment-driven configuration
+```
+
+## Status
+
+Landed: the models with a real migration chain (alembic; exercised both
+directions by `tests/test_migrations.py`), the trust ledger and its
+atomicity law, automatic time capture plus the manual door, the full
+invoice/retainer lifecycle, subscription billing (shared invoice table,
+ADR 0005) with the token-gated billing-cycle door (ADR 0007), and the
+complete time-entry approval workflow — submit/approve/lock/correct
+(ADR 0006). The "void" time-entry status is registry vocabulary held in
+reserve: no door writes it yet.
+
+Not yet built: a real payment processor and a real accounting-sync
+adapter — both seams stay Protocol + Fake (ADR 0003, ADR 0004), tracked
+on the billing build-out issue (FS-910).
+

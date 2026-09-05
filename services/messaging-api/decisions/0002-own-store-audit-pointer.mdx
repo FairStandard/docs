@@ -1,0 +1,43 @@
+---
+title: "2. Own store, one audit pointer"
+description: "Date: 2026-08-30"
+---
+
+> Written when this repo was `package-api`; the service is
+> **messaging-api** now. Everything below still holds for the package
+> feature inside it.
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+A finalized Package could have been written into evidence-api as a new
+record type, putting everything in one archive. But the records table is
+shaped for calls and messages, and a Package is a graph. Christopher
+ruled: own store, audit pointer only.
+
+## Decision
+
+Finalized Packages persist insert-only in package-api's Postgres. On
+delivery, package-api appends one entry to evidence-api's existing
+tamper-evident audit chain for the case, carrying the package id as the
+evidence id and the package hash as the fingerprint. Delivery is a link
+in the ONE chain the platform already trusts — no second chain-of-custody
+mechanism.
+
+The chain entry is the package's existence condition: a finalized row
+becomes readable only after its audit proof is anchored onto it (a single
+set-once write — content never changes). If the audit append fails, the
+saved row stays invisible forever, the draft survives, and the client
+retries; the orphan row is dead weight, never data.
+
+## Consequences
+
+Evidence-api's schema never learns about graphs. Anyone auditing a case
+sees package deliveries in the same sequence as every other evidence
+event, and can fetch and re-verify the Package from this service by id.
+

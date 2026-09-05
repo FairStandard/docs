@@ -1,0 +1,45 @@
+---
+title: "1. Status is lifecycle, urgency is computed"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (cap-deadlines.yaml) rules that deadlines "propose themselves
+unprompted" and are then "accepted (or dismissed) and then tracked with
+urgency status." Two different ideas are packed into that sentence: a
+deadline's lifecycle (has a human acted on it yet, and how) and its
+urgency (how pressing it is right now). Confusing the two produces a
+system that has to remember to re-stamp urgency on a schedule, which
+drifts the moment nobody runs the job.
+
+## Decision
+
+`Deadline.status` is the only status field, and it is a plain string —
+`proposed`, `accepted`, `dismissed`, `done` — never an enum, matching
+every other extensible-registry field on the platform. It changes only
+when a human (or a future automation) acts: propose, accept, dismiss,
+mark done.
+
+Urgency is never a column. `store.urgency_of(status, due_at, now)` is a
+pure function computed every time a deadline is listed, comparing
+`due_at` against the caller's clock: `overdue`, `due_soon` (within three
+days), `on_track`, or `closed` (dismissed or done deadlines are never
+urgent). The three-day `due_soon` window is a code constant today
+(`DUE_SOON_WINDOW`), not rule content — it is a display threshold, not a
+statutory offset, so it does not belong behind the StateLawReader seam
+the way rule offsets do.
+
+## Consequences
+
+Listing deadlines always costs one extra computation per row, which is
+cheap compared to a stale stored value. If urgency thresholds ever need
+to vary by practice area, that is a new decision (and a candidate for
+moving into rule content) — not backfilled from this ADR.
+

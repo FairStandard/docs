@@ -1,0 +1,69 @@
+---
+title: "2. The recommendation engine is a content-driven deep module"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Prior boundary decisions (already ruled) put both filing templates and
+the recommendation engine inside filings-api — filings-api only
+"announces facts," and every practice-area-specific rule (which filing
+type to recommend, when) must live behind the practice-pack / state-law
+seams, never hardcoded. This is the same shape deadlines-api solved for
+its own rule engine (its ADR 0002): a pure function over typed content,
+fed by reader seams, never reading a clock or performing I/O itself.
+
+The engine needs two different kinds of input: case-specific facts (the
+case's phase, its docket) from case-api, and practice-area-specific
+recommendation rules from packs-api. Coupling the engine's contract
+directly to either service's own response shape would make an unrelated
+change in case-api or packs-api silently ripple into this engine.
+
+## Decision
+
+`engine.py`'s `recommend()` and `obligations_for()` are pure: given a
+`RecommendationSet` (content), `CaseFacts`, a docket, and existing
+filings on the case, they return the same output every time, with no
+clock read and no I/O. Practice content — `RecommendationRule` (a filing
+type, a title, a reason, and optional phase/event-kind gates) and
+`ObligationRule` (a filing type, an obligation kind, and its due-basis
+content) — arrives as data, shaped by `store.py` from packs-api's raw
+`sections` dict, never written into the engine itself.
+
+Two reader seams supply the engine's other inputs:
+
+- `CaseReader` (`case_reader.py`): a `Protocol` with `get_case_facts` and
+  `list_docket`, same servicekit-doorway pattern as deadlines-api's own
+  case_reader.py. `HttpCaseReader` calls case-api's real
+  `GET /internal/cases/{case_id}` and
+  `GET /internal/cases/{case_id}/docket` (paged, X-Workspace-Id header).
+  `FakeCaseReader` backs it for tests.
+- `PacksReader` (`packs_reader.py`): a `Protocol` with
+  `get_current_sections`, calling packs-api's real
+  `GET /internal/practice-areas/{key}/packs/current` — with no
+  X-Workspace-Id, since packs-api is shared platform configuration, not
+  workspace data (packs-api's own main.py docstring). `HttpPacksReader`
+  and `FakePacksReader` are contract-tested to agree on the same
+  practice area.
+
+`CaseFacts` and `DocketEvent` are this service's own types, not
+re-exports of case-api's or deadlines-api's shapes — deliberately, so a
+schema change in either of those services is a compile error here, not a
+silent runtime drift.
+
+## Consequences
+
+An unconfigured practice area (no `recommendations`/`obligations`
+sections in its current pack) recommends nothing and announces no
+obligations — honest, not silently broken, same reasoning as
+deadlines-api's empty `FakeStateLawReader()`. A case-api or packs-api
+outage surfaces as `CaseUnavailable`/`PacksUnavailable` (or the
+`Rejected` variants) after the retry budget — there is no cached
+fallback in this slice.
+

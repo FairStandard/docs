@@ -1,0 +1,62 @@
+---
+title: "Domain model"
+description: "The case context is the platform's foundation store for a legal matter: the case record itself, its court orders, and its docket — the event register of…"
+---
+
+The case context is the platform's foundation store for a legal matter: the
+case record itself, its court orders, and its docket — the event register
+of everything that happened in court. It does not hold who is working the
+case (IDENTITY owns case-team records), deadlines (their own service
+later), or cooperation/discovery tracking (later slices on this repo).
+
+## Language
+
+**Case**:
+One legal matter — caption, case number, court, and phase. The anchor every
+other table in this store points back to.
+_Avoid_: matter, dispute
+
+**Caption**:
+The case's formal name as the court records it (for example "Smith v.
+Smith").
+_Avoid_: title, name (bare)
+
+**Phase**:
+Where a case sits in its lifecycle, stored as an opaque string from the
+owning practice-area pack — never a hardcoded label, never an enum. See
+ADR 0002.
+_Avoid_: stage, step, status (a case's phase and an order's status are
+different vocabularies; don't conflate them)
+
+**Case party**:
+A named party on the case's caption — petitioner, respondent, and similar
+roles — scoped to the case itself. Distinct from a case-team record (who
+represents the case, which org, which role), which lives in IDENTITY.
+_Avoid_: case team, participant, member
+
+**Court order**:
+One order issued in the case: a title, when it was issued, its status
+(active, superseded, and so on — also an extensible string), and free-text
+notes.
+_Avoid_: ruling (bare), decision
+
+**Docket entry**:
+One event in the case's register — a filing, a hearing, service of
+process — with an optional result and notes. `kind` and `result` are both
+extensible strings, not enums.
+_Avoid_: docket item, event log entry
+
+**Workspace**:
+The tenant boundary every row in this store carries. Every store method
+takes `workspace_id` first and filters every query on it; a row from
+another workspace does not surface, not even as a 403 — it is a 404,
+because it does not exist as far as the query is concerned.
+_Avoid_: tenant (bare), org (workspace and org are related but not
+interchangeable — workspace is the scoping key on this store's rows)
+
+**PacksReader**:
+The seam to the practice-area pack that owns phase vocabulary. A `Protocol`
+with one method today (`validate_phase`); a `FakePacksReader` backs it
+until packs-api ships an HTTP surface to call. See ADR 0002.
+_Avoid_: pack client, vocabulary service
+

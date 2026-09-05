@@ -1,0 +1,96 @@
+---
+title: "learning-api"
+sidebarTitle: "Overview"
+description: "FairStandard's learning center: versioned module content, workspace-scoped assignments and progress tracking, and evidence-driven module suggestions. See…"
+---
+
+FairStandard's learning center: versioned module content, workspace-scoped
+assignments and progress tracking, and evidence-driven module suggestions.
+See `CONTEXT.md` for the domain glossary and `docs/adr/` for the decisions
+this service is built on.
+
+## Architecture
+
+Module content (`Module` in `models.py`) is versioned, immutable content —
+the same pattern packs-api uses for a `Pack` (ADR 0001). It carries no
+workspace scoping: every workspace on the platform reads the same
+published module. `Assignment` and `Progress` are workspace-scoped rows,
+the deadlines-api / case-api discipline: every door under `/assignments`
+requires `X-Workspace-Id` and every store query filters on it.
+
+Three reader seams (Protocol + Fake + Http, on servicekit's
+doorway-errors contract) read content from other services rather than
+copying it:
+
+- `state_law_reader.py` — state-law-api's statute door, wired into the
+  module read doors: a state process guide's `statute_refs` gain the
+  statute's live text at render time, and an unloaded citation renders
+  as an honest absence (ADR 0004).
+- `analysis_reader.py` — analysis-api's findings door, feeding the
+  suggestion engine (`suggestions.py`) that maps a case's finding types to
+  relevant modules. The mapping itself lives entirely in
+  `Module.addresses_finding_types` — content, not code (ADR 0002).
+- `packs_reader.py` — packs-api's practice-area registry: publishing a
+  module under an unregistered practice-area key is rejected with a 422
+  (ADR 0004 addendum).
+
+## HTTP surface
+
+Module content — shared, no workspace header:
+
+- `POST /internal/modules/{module_key}` — publish a new version.
+- `GET /internal/modules/{module_key}/current` — the highest published
+  version. `404` if none exists.
+- `GET /internal/modules/{module_key}/{version}` — one specific,
+  immutable version.
+- `GET /internal/modules?practice_area_key=&jurisdiction=` — the current
+  version of every module, optionally filtered.
+
+Assignments and progress — workspace-scoped (`X-Workspace-Id` required):
+
+- `POST /assignments` — assign a module version to an assignee.
+  `case_id` is optional.
+- `GET /assignments/{id}`, `GET /assignments?assignee_id=`
+- `POST /assignments/{id}/progress` — mark a lesson complete. Idempotent.
+- `GET /assignments/{id}/progress`
+
+Suggestions — workspace-scoped:
+
+- `GET /cases/{case_id}/suggest-modules?practice_area_key=` — modules
+  relevant to a case, computed from analysis-api's findings.
+
+`GET /health` is unauthenticated.
+
+## Seed content
+
+`seed/family-law-tx-custody.json` is the first module: a Texas state
+process guide walking a custody case through the family-law pack's
+lifecycle phases (Intake → Discovery → Mediation → Trial, packs-api
+`seed/family-law.json`), with each lesson referencing a statute citation
+rather than pasted text. `seed.py` loads it; `tests/test_seed.py`
+publishes it through the store to prove the committed file is real,
+publishable content.
+
+## Setup
+
+```
+uv sync --dev
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+Tests spin up a real `postgres:18` container via testcontainers — Docker
+must be running locally and in CI. `servicekit` is a private git
+dependency; CI grants access via the org-level `SERVICEKIT_TOKEN` secret.
+
+## Migrations
+
+Schema changes go through Alembic:
+
+```
+uv run alembic revision --autogenerate -m "message"
+uv run alembic upgrade head
+```
+

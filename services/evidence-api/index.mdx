@@ -1,0 +1,43 @@
+---
+title: "evidence-api"
+sidebarTitle: "Overview"
+description: "The FairStandard evidence store. It owns the platform's immutable evidence: records (calls and messages), stored files, and the tamper-evident hash-chained…"
+---
+
+The FairStandard evidence store. It owns the platform's immutable evidence:
+records (calls and messages), stored files, and the tamper-evident
+hash-chained audit trail. Evidence is written once by the intake service and
+read by every other service over this API — it is never mutated, and it
+never moves again.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push and
+pull request.
+
+## Status
+
+Built and tested: the insert-only record store with per-workspace
+content-hash dedup, the file store behind the S3 seam (presigned upload
+and audited, presigned download doors - FS-965), and the hash-chained
+audit trail with tamper-detection tests. Migrations are real alembic
+(`uv run alembic upgrade head` against `EVIDENCE_DATABASE_URL`),
+exercised both directions by `tests/test_migrations.py`. Configuration
+is environment-driven under the `EVIDENCE_` prefix. Not yet built: the
+dedicated file-level ledger table (ADR 0005 names it as future work)
+and relation-fact emission (ADR 0004).
+

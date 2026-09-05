@@ -1,0 +1,51 @@
+---
+title: "2. Applying a template copies its blocks into the draft — no live reference"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+FS-899's scope explicitly calls for "copy-at-apply scaffolding (applying a
+template copies its content into the document draft — no live template
+reference)". A live reference (a draft that re-reads its template's
+current blocks on every access) would mean editing a template retroactively
+changes every draft ever started from it — including drafts a user has
+already customized. That is never the right behavior for a document a
+person is actively drafting.
+
+Templates are also versioned: creating a template with a name that
+already exists adds a new version rather than mutating the existing row
+(`Store.create_new_template_version`), so a template's content at any
+past version stays inspectable.
+
+## Decision
+
+`POST /internal/drafts` with a `template_id` reads that template's
+`blocks` and copies them — a fresh `list[dict]`, not the same object — into
+the new draft's `blocks` column at creation time. The draft additionally
+records `source_template_id` and `source_template_version` for
+provenance: which template, which version, started this draft. Neither
+field is ever dereferenced to look up live template content again;
+they are read-only history.
+
+After creation, a draft's blocks are independent. `PATCH
+/internal/drafts/{id}/blocks` edits only the draft; nothing about the
+source template changes, and nothing about existing drafts changes when a
+new template version is created.
+
+## Consequences
+
+A template can be edited (as a new version) freely without touching any
+draft already in progress. A draft can be inspected to answer "which
+template, which version, did this start from" without needing the
+template to still exist in its original form. The cost: if a template's
+structure improves after a draft was started, that draft does not
+automatically pick up the improvement — by design; picking it up would be
+a live reference, the thing this ADR rules out.
+

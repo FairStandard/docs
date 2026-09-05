@@ -1,0 +1,44 @@
+---
+title: "2. Phase is opaque pack vocabulary behind a reader seam"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (`vision.md`, `locked-decisions.yaml` §audience-vocabulary-extensibility)
+rules that lifecycle labels come from practice-area configuration, never
+hardcoded, and that vocabularies are extensible registries served as data.
+packs-api — the service meant to own and validate practice-area phase
+vocabularies — is being built in parallel this wave and does not exist yet
+for case-api to call.
+
+## Decision
+
+`Case.phase` stores a plain string with no validation against a fixed list,
+enum, or database constraint. A `PacksReader` Protocol (`packs.py`) defines
+the one method case-api needs — `validate_phase(practice_area, phase)` —
+and a `FakePacksReader` backs it for tests. As of 2026-08-31 the
+`HttpPacksReader` is real and wired into `main.py`'s lifespan: it reads
+packs-api's current pack for the case's practice area and validates the
+phase against its `lifecycle_phases` keys. Both adapters are strict — a
+practice area with no published pack validates nothing. `Case` gained a
+`practice_area` column the same day so the pack join has a key.
+
+This is the same pattern as every other extensible-registry field in this
+service (party role, docket entry kind, order status) — plain strings, no
+enums, no hardcoded lists — but `phase` gets its own named seam because it
+is the one field with a real owning service on the near horizon.
+
+## Consequences
+
+Case-api ships this wave without blocking on packs-api. Nothing about
+`Case.phase`'s storage, the API shape, or existing tests changes when the
+Http adapter is added — only `main.py`'s lifespan wiring changes, and only
+additively.
+

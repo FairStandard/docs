@@ -1,0 +1,61 @@
+---
+title: "4. Transcripts are measurement-derived readable content"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Word-level transcript text already lives inside the measurement store —
+every scored spoken segment (`segment_type == "language"`) carries its
+own `speaker_name`, `time_begin`, `time_end`, and `text`, fused inline
+into that segment's emotion Measurement row (ADR 0002, ADR 0003).
+analysis-api reads transcript text today (`Record.transcript`, consumed
+by `engine.py`'s `extract_text()` for tier-2 pattern detection), but
+nothing in media-api exposes transcript text as its own readable thing —
+a caller who only wants "what was said" has to fetch the full emotion
+timeline and pick the text back out of it.
+
+Transcription itself stays a pipeline concern (ADR 0001: this service
+ships with the models it uses). What changes here is what the store can
+answer, not how it fills.
+
+## Decision
+
+Transcripts are readable content, not a side effect of emotion scoring.
+media-api owns them and everyone reads them through this service's API,
+never by reconstructing them from another door's response.
+
+No new store: a transcript is derived from the Measurement rows the
+pipeline already writes, filtered to the segments that carry transcript
+text (`segment_type == "language"`) and ordered by `time_begin`. Two
+forms, one contract (`MeasurementStore.transcript`), proven identical on
+the real ClickHouse adapter (testcontainers) and the in-memory fake:
+
+- **Segments** — the ordered list of `{speaker_name, segment_type,
+  time_begin, time_end, text}` rows.
+- **Full text** — a convenience join (`transcript_text`), one
+  speaker-labeled line per non-blank segment.
+
+`GET /internal/recordings/{id}/transcript`, workspace-scoped like every
+door here, returns both.
+
+## Consequences
+
+No schema change and no write-path change: the current segment types
+(`prosody`, `burst`, `language`, `vocalization` per `measurements.py`)
+already carry text honestly — only `language` rows are ever produced
+with real text (`scoring.py`'s `translate`), so filtering to that type is
+a correct reconstruction, not a workaround. If a future segment type
+ever carries transcript text too, the door's filter is the one place
+that changes.
+
+A caller wanting only the words no longer needs the full emotion
+timeline, and no service other than media-api needs to know the
+measurement schema well enough to pick transcript text back out of it.
+

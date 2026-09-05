@@ -1,0 +1,36 @@
+---
+title: "1. Jurisdiction law as one content service"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+FairStandard serves the whole legal industry, family law first, across
+states (canon: capability parity, four-axis audiences). Every state has
+its own family code, its own court rules, its own pro bono thresholds.
+Building law-holding logic per state, or per practice area, means a new
+service every time a state or a rule family is added — a scaling
+approach that fails the moment the second state onboards.
+
+## Decision
+
+Jurisdiction law is one content service, not one service per state.
+Everything a state contributes (statutes now; court rules, process
+definitions, and pro bono eligibility later — named as owned-here in
+CONTEXT.md, not built yet) is content this service holds, partitioned by
+jurisdiction. Onboarding a new state is a data upload against this
+service's bulk-load door, never a new deployment, never new code.
+
+## Consequences
+
+Adding Wave 2's court rules and process definitions is an additive slice
+inside this service rather than a new service. The service's own scaling
+axis is jurisdiction count and content volume per jurisdiction, not
+number of states deployed.
+

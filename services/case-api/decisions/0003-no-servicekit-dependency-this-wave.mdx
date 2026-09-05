@@ -1,0 +1,33 @@
+---
+title: "3. No servicekit dependency this wave"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The build brief calls for pinning servicekit at a fixed revision "if
+queues/doorways are needed." This slice is a CRUD foundation store: cases,
+orders, and docket, read and written directly over Postgres through
+SQLModel. It has no outbound queue, no job board, and no doorway to
+another service's private data.
+
+## Decision
+
+`servicekit` is not added as a dependency this wave. The CI workflow still
+carries the `SERVICEKIT_TOKEN` `insteadOf` git config step, matching every
+sibling repo's workflow exactly, so a future slice that does need
+servicekit (queues, doorways) can add the dependency without touching CI.
+
+## Consequences
+
+If a later slice on this repo (deadlines, cooperation, discovery tracking)
+needs a queue or a doorway into another service, add `servicekit` then,
+pinned at whatever revision is current at that time — not backfilled from
+this ADR.
+

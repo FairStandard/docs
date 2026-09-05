@@ -1,0 +1,71 @@
+---
+title: "files-api"
+sidebarTitle: "Overview"
+description: "FairStandard's deterministic extraction service: format detection and per-doc-type container parsing (ADR 0001). See CONTEXT.md for the domain glossary and…"
+---
+
+FairStandard's deterministic extraction service: format detection and
+per-doc-type container parsing (ADR 0001). See `CONTEXT.md` for the
+domain glossary and `docs/adr/` for the decisions this service is built
+on.
+
+## Package layout
+
+This is a proper installable package (`src/files_api/`, `uv_build`
+backend), not just an HTTP service — a small stable surface (format
+detection, the identity hash formulas, the self-validation rule) is
+meant to be imported in-process by other repos that pin this package
+the same way they pin `servicekit`. See `src/files_api/__init__.py` for
+what's exported. `files_api.main` (the FastAPI app) is deliberately not
+part of that surface — nothing needs to build an HTTP app just to call a
+hash formula.
+
+## Architecture
+
+No store, no workspace scoping — this service is pure computation over
+file bytes a caller already owns.
+
+- **Format detection** (`src/files_api/detection.py`) — layered
+  layered byte-level sniffing (domain prefixes, exact byte signatures, Magika at score >= 0.80, libmagic backstop - ADR 0002), ported
+  verbatim from intake.
+- **Processor registry** (`src/files_api/parsers/`) — one deterministic
+  parser per doc type (call-history CSV, calls-report PDF, iMessage
+  export PDF, messages-report PDF), each self-registered by doc type.
+- **Self-validation** (`src/files_api/parsers/validation.py`) — every
+  extraction is checked against what the document claims and what a
+  record requires (ADR 0004, ported from intake); nothing invalid is
+  reported as clean.
+- **Audit queue** (`src/files_api/files_queue.py`) — a `servicekit`
+  `StreamQueue` publishing one `FilesJob` per completed extraction, for
+  a downstream consumer. The HTTP extract door publishes it best-effort
+  (a broken queue never fails the extraction) and only when
+  `FILES_REDIS_URL` is configured; extraction itself stays synchronous.
+
+Model reasoning is explicitly out of scope. The AI extraction escalation
+tier stays in intake, which owns the model call and its spend.
+
+## HTTP surface
+
+Internal only:
+
+- `POST /v1/detect` — file bytes in, `{format: str}` out.
+- `POST /v1/extract` — file bytes plus `doc_type`, `fingerprint`, and an
+  optional `owner_name` in; records, the processor's own report, and a
+  validity verdict out. `422` when no processor is registered for
+  `doc_type`.
+- `GET /health`
+
+## Setup
+
+```
+uv sync --dev
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+`uv sync` needs read access to the private `servicekit` repository (see
+`pyproject.toml`'s `[tool.uv.sources]` for the pinned revision); CI
+authenticates via the `SERVICEKIT_TOKEN` secret.
+

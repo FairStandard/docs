@@ -1,0 +1,80 @@
+---
+title: "Domain model"
+description: "The document-creation context is the engine for any document the platform ever writes: motions, letters, notices, reports — one engine, not one per practice…"
+---
+
+The document-creation context is the engine for any document the platform
+ever writes: motions, letters, notices, reports — one engine, not one per
+practice area. It owns templates, drafts, and the assembly-and-rendering
+pipeline that turns a draft's structured blocks into a finished file. It
+does not own where a draft's content comes from (an app upstream fills in
+the blocks), case ownership or party records (case-api owns those; this
+service only reads case facts through a seam), or filing with a court
+(a later service's job).
+
+## Language
+
+**Template**:
+A named, versioned starting point for a draft: an ordered list of
+structured blocks. Templates are immutable once created — editing a
+template's content creates a new version, never a mutation of an existing
+one.
+_Avoid_: form, form template
+
+**Copy-at-apply**:
+The rule that applying a template to start a draft copies its blocks into
+the draft. The draft has no live reference back to the template after
+that — editing the template later never changes drafts already started
+from it. See ADR 0002.
+_Avoid_: template reference, linked template
+
+**Draft**:
+One document in progress: a title, an ordered list of structured blocks,
+and (optionally) the case it belongs to. The draft is what gets rendered.
+_Avoid_: document (bare — ambiguous with the rendered file), filing
+
+**Block**:
+One structured piece of a draft — a heading, a paragraph, a caption, an
+exhibit reference, a signature block. `type` is a plain string, not an
+enum: new block types are additive data, the same extensible-registry
+pattern case-api uses for phase, party role, and docket-entry kind.
+_Avoid_: section, element, node
+
+**Assembly**:
+The step that turns a draft's stored blocks into the blocks a renderer
+actually draws — filling in everything computed rather than stored: a
+caption block's text (from case facts) and an exhibit reference's number
+(from the block's position in the document). See ADR 0001.
+_Avoid_: compile, build (both already mean something else in this repo's
+tooling), resolve
+
+**Exhibit number**:
+Never stored. Computed at assembly time from the order of exhibit_ref
+blocks in the document — first appearance gets the next number; a repeat
+reference to the same exhibit reuses its first number. Ported from the
+platform's family-law filing wizard
+(`apps/api/app/services/filing_wizard/generation.py`,
+`_render_exhibit_list`). See ADR 0001.
+_Avoid_: exhibit index, attachment number
+
+**Caption block**:
+A placeholder in a stored template or draft (`{"type": "caption"}`) that
+assembly expands into the case's cause number, court, and parties — read
+through the CaseReader seam. Never stores case-specific text itself, so a
+draft can never go stale against the case record.
+_Avoid_: header block, court header
+
+**CaseReader**:
+The seam to case-api for case facts a caption needs. A `Protocol` with one
+method (`get_case_facts`); `FakeCaseReader` backs it for tests,
+`HttpCaseReader` calls case-api's real doors. Contract-tested to the same
+shape (`tests/test_case_reader_contract.py`). See ADR 0003.
+_Avoid_: case client, case service
+
+**Workspace**:
+The tenant boundary every row in this store carries. Every store method
+takes `workspace_id` first and filters every query on it; a row from
+another workspace does not surface, not even as a 403 — it is a 404,
+because it does not exist as far as the query is concerned.
+_Avoid_: tenant (bare), org
+

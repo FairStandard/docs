@@ -1,0 +1,54 @@
+---
+title: "1. A dedicated package service"
+description: "Date: 2026-08-30"
+---
+
+> Written when this repo was `package-api`. The service is
+> **messaging-api** now (marketplace + attorney/client/authorized-user
+> communication); the package snapshot/gate/vault below is messaging's
+> first feature, not the whole service.
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The Case Package feature (litigant sends context to attorney as one
+trustworthy bundle) needs traversal across evidence-api and analysis-api,
+its own workflow state (draft → reviewed → finalized), and an attorney
+read surface. Evidence-api was deliberately built as an insert-only leaf
+with no outbound calls; case-api is scoped to cases, orders, and legal
+rules. Christopher ruled 2026-08-30 against folding packaging into
+either.
+
+## Decision
+
+Packages live in their own service, package-api: its own Postgres, its
+own traversal and review-gate logic, its own vault API. It READS
+evidence-api and analysis-api over their APIs only, and WRITES exactly
+one thing back: an audit entry into evidence-api's existing chain when a
+Package is delivered. Client notes also live here — no other service owns
+free-text annotations, and notes exist to travel inside Packages.
+
+## Consequences
+
+One more repo and database to run, in exchange for the endless-scaling
+property: packaging grows along its own axis (new node types, new
+traversal rules) without dragging evidence-api's or case-api's schemas
+along. Evidence-api stays a leaf.
+
+## Amendment (2026-08-30): relations-api as the third upstream
+
+The walk's depth-1 discovery moves off evidence-api's thread lookup and
+onto relations-api: package-api asks the relations map who is
+structurally connected to the root record, then hydrates each answer
+from evidence-api. Packages now READS three services — evidence-api,
+analysis-api, relations-api — over their APIs only; the one write-back
+(the audit entry on delivery) is unchanged. This is snapshot-now, by
+ruling: the walk reads whatever the relations map holds at that instant
+and waits for nothing to settle. Evidence-api stays a leaf; relations-api
+stays read-only from here.
+

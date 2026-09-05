@@ -1,0 +1,36 @@
+---
+title: "1. A dedicated relations service"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Christopher's correction on the messaging carve: there must be a clear
+seam between messaging/communication and the knowledge of which files
+relate to which. Per-service relationship tables fail once a tie spans
+services (the same person across records and findings has no natural
+owner). Research (scratch_pads/relations-research/findings.md) ruled out
+the embedded-engine route (its one credible engine was archived by its
+maintainers) and the dedicated graph databases (licensing).
+
+## Decision
+
+Relationship knowledge is its own small service. It stores typed Edges
+between References — (type, id) pairs — and never learns any other
+service's schema. The relation vocabulary lives in a shared package all
+services import, so the kinds are centrally defined even though only
+this service stores the data. Messaging, and everyone else, composes
+this service's answers and owns no relationship logic.
+
+## Consequences
+
+New relation kinds and new consumers are additive. The messaging seam
+Christopher required exists structurally: conversations live there,
+connections live here.
+

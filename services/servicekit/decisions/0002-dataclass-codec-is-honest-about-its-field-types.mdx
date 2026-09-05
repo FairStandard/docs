@@ -1,0 +1,36 @@
+---
+title: "dataclass_codec is honest about its field types"
+description: "Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949)."
+---
+
+Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949).
+
+`notifications-api/queueing.py`'s `EventCodec` and `media-api/pipeline.py`'s
+`MediaJobCodec` are the same codec written twice: a dataclass, an `encode`
+that turns every field into a string, and a `decode` that parses them
+back. `dataclass_codec(cls)` builds that codec from the dataclass's own
+field types instead of a third hand-written copy.
+
+The supported field types are `str`, `int`, `float`, `bool`, and any of
+those `| None` — nothing else. That is a deliberate, honest limit: a
+Redis Streams message is a flat string-dict, and this codec never
+pretends otherwise by silently `str()`-ing a list or a nested dataclass
+into something `decode` cannot reverse. A field type outside that set
+fails at `dataclass_codec(cls)` itself, not on the first message that
+happens to touch it — wrong at definition time, the same way
+`streams.py`'s `Codec` protocol is checked at construction, not at the
+first `xadd`.
+
+A missing required field, or text that doesn't parse as its field's type
+(`"sort of"` for a `bool`, `"not-a-number"` for an `int`), raises
+`ValueError` from `decode`. That is not a new failure shape:
+`streams.py`'s `_process_one` already catches any decode exception and
+routes the message to the dead-letter stream — this is the same poison-
+payload path `tests/test_streams.py::test_a_poison_payload_dead_letters_with_its_error`
+already proves, now reachable through a codec nobody had to write by
+hand.
+
+Deletion test: `tests/test_codec.py::test_an_unsupported_field_type_is_rejected_at_construction`
+— if `dataclass_codec` stopped validating field types up front, this test
+fails.
+

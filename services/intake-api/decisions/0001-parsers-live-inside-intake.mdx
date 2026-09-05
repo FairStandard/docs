@@ -1,0 +1,13 @@
+---
+title: "The parsers live inside intake"
+description: "Status: Superseded by ADR 0008 (2026-08-30, FS-887)."
+---
+
+Status: Superseded by ADR 0008 (2026-08-30, FS-887).
+
+Ruled 2026-08-30 under the endless-scaling standard: the parser fleet is
+intake's own machinery, one deep module behind intake's door — not a shared
+library. Parsing has exactly one caller; extracting a library later, if a
+second caller ever appears, is an addition that costs the same then as now,
+not a migration.
+

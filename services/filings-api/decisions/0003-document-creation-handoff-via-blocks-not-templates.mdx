@@ -1,0 +1,52 @@
+---
+title: "3. Document assembly is a blocks handoff, never a templates call"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+document-creation-api renders any document the platform writes, and owns
+two internal doors: `POST /internal/templates` (create/version a
+reusable template) and `POST /internal/drafts` (create a draft from
+either a `template_id` or explicit `blocks`). Filing templates were
+already ruled to live INSIDE filings-api, not document-creation-api —
+so filings-api must never call document-creation's `/internal/templates`
+door; doing so would put filing-template ownership on the wrong side of
+the boundary.
+
+Filings-api also must not store rendered bytes: it owns the filing's
+*workflow* state (which pass, which draft it points at), not the
+document's content or its rendered form — that split keeps a re-render
+(a later template edit, a different output format) from requiring any
+change to filings-api's own rows.
+
+## Decision
+
+`DocumentCreationReader` (`document_creation_reader.py`) is a `Protocol`
+with one method, `create_draft(workspace_id, title, case_id, blocks)`.
+`HttpDocumentCreationReader` calls document-creation-api's real
+`POST /internal/drafts` with an explicit `blocks` body — never
+`template_id` — and returns the draft id document-creation hands back.
+`FakeDocumentCreationReader` keeps the same promise in memory for tests.
+
+`store.hand_off_draft` stores only the returned `draft_id` on the
+`Filing` row (`draft_id: int | None`). Filings-api never calls
+document-creation's `/render` door and never stores or returns rendered
+bytes from this seam — rendering remains entirely document-creation's
+job, invoked by whatever caller needs the actual document.
+
+## Consequences
+
+A filing's `blocks` (the drafting content itself) is not persisted by
+filings-api today — it is handed to document-creation on each
+`hand_off_draft` call and document-creation is the system of record for
+it via its own `draft.blocks`. If filings-api later needs to inspect or
+re-submit those blocks without a round trip to document-creation, that is
+a new decision, not backfilled from this ADR.
+

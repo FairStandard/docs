@@ -1,0 +1,57 @@
+---
+title: "5. A queue-submit failure leaves a visible, recoverable row"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+`register_recording` commits the Recording row to Postgres, then submits
+the measure job to the stream queue. If the submit fails (Redis
+unreachable, stream full, whatever), the row already exists at status
+`received` and nothing retries it — the recording is stranded forever,
+indistinguishable from one that is simply waiting its turn.
+
+Two honest fixes were on the table: (a) a background sweep that
+periodically re-submits every `received` row older than some threshold,
+or (b) mark the row `queue_failed` on the spot, return a clear error to
+the caller, and expose a door that re-submits it on request.
+
+## Decision
+
+(b), the smaller design. A sweep needs its own scheduler, its own
+threshold tuning, and its own false-positive handling (a `received` row
+that is merely queued and waiting looks identical to one that is
+stranded). Marking the failure inline needs neither: the failure is
+known at the moment it happens, so the row is marked `queue_failed`
+right there and the caller gets a real error instead of a silent 201.
+
+`register_recording` now catches a submit failure, calls
+`store.mark_recording(..., "queue_failed", error=...)`, and answers with
+502 instead of 201. `POST /internal/recordings/{id}/requeue` 409s on any
+other status so it can't double-queue a row that is already in flight
+or already measured; otherwise it marks the row `received` BEFORE
+submitting, then submits, compensating back to `queue_failed` on a
+second failure. That ordering matters: a job cannot exist in the queue
+until submit succeeds, so a worker can never finish it before the
+`received` write lands. Submitting first and marking after — the order
+`register_recording` uses, where there is no status write after submit
+to race — would open exactly the race this ADR exists to close: a fast
+worker marking the row `measured`, then this call stomping it back to
+`received`, a lie nothing would ever correct.
+
+## Consequences
+
+A stranded row is now visible (`status == "queue_failed"`) and
+recoverable (the requeue door) instead of silently invisible. Recovery
+is manual — whatever calls this service decides when to retry, on
+whatever schedule makes sense for it. If queue failures turn out to be
+frequent enough that manual requeuing does not keep up, a sweep can be
+added later without changing this contract: it would just call the same
+requeue path on a timer.
+

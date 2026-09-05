@@ -1,0 +1,69 @@
+---
+title: "1. Exhibit numbers and caption text are computed at assembly time, never stored"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The platform's CLAUDE.md lists "computed exhibit numbers — never stored,
+always derived from position" as one of the platform's core architectural
+invariants, with the anti-pattern spelled out directly: a stored
+`exhibitNumber` field is wrong; a `type: 'exhibit_ref'` block resolved at
+render time is right. The platform's actual implementation of this rule
+lives in the family-law filing wizard's PDF renderer
+(`apps/api/app/services/filing_wizard/generation.py`,
+`_render_exhibit_list`): exhibit numbers come from
+`enumerate(state.selected_evidence, start=1)` — first appearance in
+document order gets the next number. Nothing in that function persists a
+number back to the evidence record.
+
+document-creation-api is the general engine every future document-writing
+surface will use, so this rule has to hold for any document, not just
+that one wizard's flat evidence list. A general document can reference the
+same exhibit more than once (a paragraph and, later, the exhibit list
+itself), which the platform's flat list never has to handle.
+
+Court captions carry the same shape of problem: a caption's text (cause
+number, court, party names and roles) is case data that can change after
+a draft is started. Storing rendered caption text in the draft risks
+drift from the case record the moment either changes.
+
+## Decision
+
+Both are computed by the assembly engine (`assembly.py`), never by the
+store, and never persisted:
+
+- A stored caption block is a placeholder, `{"type": "caption"}`.
+  Assembly expands it into concrete fields (`case_number`, `court`,
+  `caption`, `parties`) read through the CaseReader seam (ADR 0003) at
+  assembly time — on every `GET /internal/drafts/{id}` and every render,
+  not once at draft creation.
+- Exhibit numbers are computed by walking the draft's current block order:
+  the first `exhibit_ref` block naming a given `ref_id` gets the next
+  number; a later `exhibit_ref` block with the same `ref_id` reuses that
+  number rather than incrementing. This extends the platform's rule (ported
+  verbatim for the single-reference case) to handle a reference appearing
+  more than once — the platform's flat evidence list never needed to.
+  Numbers are attached to the assembled copy the engine returns; the
+  stored block a caller `PATCH`es never carries a `number` field.
+
+Pinning tests in `tests/test_assembly.py` cover: first-appearance
+ordering, repeat-reference reuse, that reordering blocks changes the
+computed numbers on the next read (proving nothing is cached), and that
+the stored block dict is never mutated in place.
+
+## Consequences
+
+Reordering a draft's blocks (`PATCH /internal/drafts/{id}/blocks`) is
+enough to renumber exhibits correctly on the next `GET` or render — no
+separate renumbering step exists or is needed. Caption text always
+reflects the current case record. The cost is that both computations run
+on every read, not just once — acceptable, since neither is expensive and
+both are pure functions over data already in memory.
+

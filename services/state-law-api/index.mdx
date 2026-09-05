@@ -1,0 +1,154 @@
+---
+title: "state-law-api"
+sidebarTitle: "Overview"
+description: "FairStandard's jurisdiction-law content service: the supported- jurisdictions registry, the statute vault with its bulk content-upload door (ADR 0001), and…"
+---
+
+FairStandard's jurisdiction-law content service: the supported-
+jurisdictions registry, the statute vault with its bulk content-upload
+door (ADR 0001), and versioned published content per jurisdiction -
+deadline rules with holidays, court rules, process definitions, and pro
+bono eligibility. Practice-area keys are validated against packs-api at
+publish time (ADR 0005). See `CONTEXT.md` for the domain glossary and
+`docs/adr/` for the decisions this service is built on.
+
+## Architecture
+
+- **Jurisdiction registry** (`models.py::Jurisdiction`) — a small,
+  unpartitioned table: one row per jurisdiction this service holds
+  content for. `POST /v1/jurisdictions` registers or updates one;
+  `GET /v1/jurisdictions` lists them.
+- **Statute vault** (`models.py::Statute`) — hash-partitioned by
+  jurisdiction (ADR 0002), following relations-api's workspace-
+  partitioning idiom: a composite primary key carrying the partition
+  key, a uniqueness constraint on `(jurisdiction, citation)`, and a
+  fixed set of hash partitions (`partition_ddl`).
+- **Bulk content upload** (`store.py::Store.bulk_load`) — an `asyncpg`
+  COPY into a temporary table, folded into the statute table with
+  `ON CONFLICT DO NOTHING`, the same shape as relations-api's
+  `bulk_load`. Idempotent: re-uploading the same statute writes it once.
+- **Read doors** (`store.py::Store`) — statute by citation, statutes by
+  jurisdiction + citation prefix, jurisdiction listing. All partition-
+  local.
+- **Deadline rule vault** (`models.py::DeadlineRuleSetVersion`) —
+  hash-partitioned by jurisdiction, same idiom as the statute vault
+  (ADR 0002 addendum). A publish inserts the next version for one
+  (jurisdiction, practice area); the current rule set is the highest
+  version. `store.py::Store.publish_rule_set` validates every rule's
+  shape (trigger type, offset unit/direction) before writing.
+- **Holiday content** (`models.py::Holiday`) — the business-day calendar
+  content deadline rules reference, never hardcoded. A plain table
+  (same reasoning as the jurisdiction registry), updated independently
+  of rule-set publishes so next year's holidays land without a
+  republish.
+
+- **Court rule set** (`models.py::CourtRuleSetVersion`) — hash-
+  partitioned by jurisdiction, same versioned-publish idiom as the
+  deadline rule vault (ADR 0004). `sections` carries filing
+  requirements, service methods, and notice rules as structured,
+  extensible content — an open `kind` per section, not a fixed schema.
+  Versioned per (jurisdiction, court level).
+- **Process definition** (`models.py::ProcessDefinitionVersion`) —
+  hash-partitioned by jurisdiction. `stages` carries the step-by-step
+  sequence a filing or motion follows: what triggers each transition
+  and which statute citations it references. Versioned per
+  (jurisdiction, practice area); the read door is for learning-api's
+  guides and case displays to consume.
+- **Pro bono eligibility** (`models.py::ProBonoEligibilityVersion`) —
+  hash-partitioned by jurisdiction. `criteria` carries income
+  thresholds and case-kind rules as structured content. Versioned per
+  jurisdiction; entitlements-api's pro-bono grants are the named future
+  consumer (seam named in ADR 0004, not built here).
+
+No `X-Workspace-Id` anywhere: state law is shared content, not
+workspace-owned data (ADR 0003).
+
+## HTTP surface
+
+Internal only:
+
+- `GET /health`
+- `POST /v1/jurisdictions` — register or update a jurisdiction.
+- `GET /v1/jurisdictions` — list every jurisdiction this service holds
+  content for.
+- `POST /v1/statutes/bulk` — `{jurisdiction, statutes: [...]}` in,
+  `{received, written}` out.
+- `GET /v1/statutes/{jurisdiction}/{citation}` — one statute. `404` when
+  not found.
+- `GET /v1/statutes/{jurisdiction}?prefix=...` — statutes in one
+  jurisdiction whose citation starts with `prefix`.
+- `POST /v1/deadline-rule-sets/publish` — `{jurisdiction, practice_area,
+  rules: [...], business_weekdays, source_note}` in, `{jurisdiction,
+  practice_area, version, published_at}` out. `422` when a rule's shape
+  is invalid (unknown trigger type, offset unit, or direction).
+- `GET /v1/deadline-rule-sets/{jurisdiction}/{practice_area}` — the
+  current (highest-version) rule set: rules plus the merged calendar
+  (business weekdays + current holidays), exactly the shape
+  deadlines-api's engine needs. `404` when nothing has been published.
+- `POST /v1/holidays/bulk` — `{jurisdiction, holidays: [{date,
+  name}]}` in, `{received, written}` out. Idempotent.
+- `GET /v1/holidays/{jurisdiction}` — every holiday on file for one
+  jurisdiction.
+- `POST /v1/court-rule-sets/publish` — `{jurisdiction, court_level,
+  sections: [...], source_note}` in, `{jurisdiction, court_level,
+  version, published_at}` out. `422` when a section is missing
+  `section_id`, `kind`, `title`, or a non-empty `body`.
+- `GET /v1/court-rule-sets/{jurisdiction}/{court_level}` — the current
+  (highest-version) court rule set. `404` when nothing has been
+  published.
+- `POST /v1/process-definitions/publish` — `{jurisdiction,
+  practice_area, stages: [...], source_note}` in, `{jurisdiction,
+  practice_area, version, published_at}` out. `422` when a stage is
+  missing `stage_id`, `title`, or a trigger's `type`.
+- `GET /v1/process-definitions/{jurisdiction}/{practice_area}` — the
+  current (highest-version) process definition. `404` when nothing has
+  been published.
+- `POST /v1/pro-bono-eligibility/publish` — `{jurisdiction, criteria:
+  [...], source_note}` in, `{jurisdiction, version, published_at}` out.
+  `422` when a criterion is missing `criterion_id`, `kind`, or
+  `description`.
+- `GET /v1/pro-bono-eligibility/{jurisdiction}` — the current
+  (highest-version) eligibility criteria. `404` when nothing has been
+  published.
+
+## Setup
+
+```
+uv sync --dev
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+Tests spin up a real `postgres:18` container via `testcontainers` — no
+Postgres install needed locally beyond Docker running.
+
+Configuration is environment-driven under the `STATE_LAW_` prefix
+(`settings.py`): `STATE_LAW_DATABASE_URL`, `STATE_LAW_PACKS_API_URL`.
+Migrations are real alembic (`uv run alembic upgrade head` against the
+same `STATE_LAW_DATABASE_URL`); the chain creates the hash partitions
+too, and `tests/test_migrations.py` runs it both directions against
+real Postgres.
+
+`tests/fixtures/tx_family_code_sample.json` is a small (~20-record) hand-
+picked sample of Texas Family Code sections for tests only. It is not
+the statute vault's bulk load — see the FS-737 Texas load work for that.
+
+`tests/fixtures/tx_family_law_deadline_rules.json` is a small hand-
+authored Texas family-law deadline rule set (TRCP 99(b), Tex. Fam. Code
+6.702, TRCP 196.2(a)/197.2(a), TRCP 329b(a)) plus a 2026 Texas holiday
+sample, for tests only — not the full deadline-rule vault.
+
+`tests/fixtures/tx_district_court_rules.json` is a small hand-authored
+sample of Texas Rules of Civil Procedure sections (TRCP 21, 21a, 99,
+106, 245) for tests only — not the full court-rules vault.
+
+`tests/fixtures/tx_family_law_process.json` is a small hand-authored
+Texas divorce-suit process (Texas Family Code, TRCP 99) for tests only
+— not the full process-definition vault.
+
+`tests/fixtures/tx_pro_bono_eligibility.json` is a small hand-authored
+sample of Texas legal-aid eligibility criteria for tests only — not the
+full eligibility vault.
+

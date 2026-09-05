@@ -1,0 +1,12 @@
+---
+title: "Calls and messages share one records table"
+description: "The platform kept calls and messages in separate collections; here they are one records table with a type column and nullable type-specific fields — the same…"
+---
+
+The platform kept calls and messages in separate collections; here they are
+one `records` table with a type column and nullable type-specific fields —
+the same unified shape the analysis service's domain already reads. One
+table means one dedup constraint, one pagination path, and one read API for
+every consumer; a new record type is a new column set, not a new table, so
+the foundation holds as types are added.
+

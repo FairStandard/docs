@@ -1,0 +1,48 @@
+---
+title: "4. Traversal depth fixed at two"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Deeper traversal gathers more context but produces review screens no
+client can honestly read before sending. Christopher ruled: two levels,
+fixed.
+
+## Decision
+
+Depth 1 is the structural ring: records structurally connected to the
+root, the root's attachment, and the root's notes. Depth 2 is the
+analytical ring from analysis-api: findings referencing gathered records,
+and their pattern groups. The analytical hop always runs; the cap is
+hard-coded, never a client knob.
+
+## Consequences
+
+The review gate stays readable, traversal stays deterministic and cheap,
+and the attorney UI's level-1/level-2 grouping is this same number rather
+than a separate concept.
+
+## Amendment (2026-08-30): depth 1 discovered via relations, hydrated from evidence
+
+Depth 1's structural ring is no longer read straight off evidence-api's
+thread lookup. It is discovered by asking relations-api which records are
+connected to the root, then hydrated one at a time from evidence-api;
+node ids are assigned in discovery order over that ordered relations
+answer, so the walk stays deterministic. The root's attachment and notes
+are unchanged — they never came from the thread lookup.
+
+Christopher ruled snapshot-now: the walk waits for nothing and reads
+whatever the relations map knows at that moment. If relations-api is
+ahead of evidence-api (an edge exists but the record hasn't landed yet)
+or behind it (evidence has moved past what an edge still says), that
+single discovered record is silently dropped from this snapshot rather
+than the walk stalling or failing. The review gate is where a client
+finds out their context was still settling — not the backend.
+

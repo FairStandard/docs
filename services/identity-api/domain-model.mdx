@@ -1,0 +1,104 @@
+---
+title: "Domain model"
+description: "The identity context is who a person is, who pays, and what they may be called in a given case. It owns accounts, organizations, membership, case teams, and…"
+---
+
+The identity context is who a person is, who pays, and what they may be
+called in a given case. It owns accounts, organizations, membership, case
+teams, and the vocabularies that describe them. It does not own billing
+amounts, case content, or documents — those are downstream.
+
+## Language
+
+**Account**:
+One person's login: email, password hash, name, timezone. An account can
+belong to zero, one, or many organizations at once.
+_Avoid_: user profile, member (a member is an account's link to one org)
+
+**Organization**:
+The paying customer. Always. A law firm, a legal aid clinic, a solo
+practice — whatever kind of entity is buying access, it is an
+organization. An organization can be marked pro bono, which changes how
+it is billed, never whether it is an organization.
+_Avoid_: firm (too narrow — not every org is a law firm), tenant, workspace
+(a workspace is case-side, not identity-side)
+
+**Membership**:
+One account's standing inside one organization: an org role (owner,
+attorney, staff, provider — seeded, not fixed) plus invited/joined/removed
+timestamps. An account can hold memberships in more than one organization
+at the same time (N:M) — a contract attorney working two firms is the
+proof case, not an edge case.
+_Avoid_: user_type, seat (seats are a billing concept, not identity's)
+
+**Org role**:
+What an account is authorized to do inside one organization — lives on
+the membership row, not on the account. Read from the OrgRole registry;
+extending the vocabulary is an insert, never a code change.
+_Avoid_: permission, user_type
+
+**Case team / case relationship**:
+Case relationship is how an account is positioned on one specific case —
+representing_professional, represented_party, self_represented_party,
+external_participant (seeded, not fixed). It lives on the case-team
+record, not the account, because the same person can be a representing
+professional on one case and an external participant on another. Read
+from the CaseRelationship registry.
+_Avoid_: role (ambiguous with org role), party type
+
+**Brand**:
+The name and look an organization presents to the people it serves —
+the fourth audience axis. Stored on the organization (a nullable label),
+never on the account or membership. Brand changes presentation only; it
+never gates capability. Distinct from kind: kind says what sort of
+entity the customer is (law firm, legal aid clinic), brand says what
+that entity calls itself in front of its audience.
+_Avoid_: white-label (an implementation of brand, not the concept), theme
+
+**Presentation register**:
+How a person's identity should be shown given who's looking (formal name
+for a filing, first name for a client-facing chat). Derived at read time
+from org role and case relationship — never stored, never a column on any
+identity row.
+_Avoid_: display mode (implies stored state)
+
+**Registry**:
+An extensible vocabulary — org roles, case relationships, and future
+vocabularies like document types — stored as data (a table of names) with
+seed rows, never a closed enum or a CHECK constraint. Adding a new value
+is an insert into the registry table. Validating a value against a
+registry means querying the table at call time, not checking a Python
+constant.
+_Avoid_: enum, lookup table (technically true but hides the extensibility
+guarantee — say registry)
+
+**Jurisdiction**:
+The state and county an organization operates in for family-law purposes.
+Lives on the organization, not the account, because jurisdiction follows
+who's paying and where they practice.
+_Avoid_: venue, location
+
+**Pro bono**:
+A boolean flag on an organization marking it as not paying full price.
+Pro bono changes billing treatment; it never changes what an
+organization can do or how its members are modeled.
+_Avoid_: nonprofit (an org can be pro bono without being a nonprofit)
+
+**Session**:
+One issued, revocable login: a hashed access token plus an expiry. The
+JWT alone never proves an account is still logged in — the session row
+must also exist and be unexpired. Logging out deletes the row, which
+revokes the token immediately regardless of the JWT's own expiry.
+_Avoid_: token (bare — a token is the bearer credential; a session is the
+record that makes it revocable)
+
+**Workspace scoping**:
+Every scoped query filters by its scope key first, in the query itself —
+never through row-level security. Org-scoped rows (membership) filter by
+organization id. Case-team rows carry the case-side workspace id, and
+every case-team write is scoped by it: a seat already held in another
+workspace is refused, never silently moved. This service has no RLS;
+scoping is a discipline enforced in `store.py`, the same as every other
+carved service in the platform.
+_Avoid_: tenant isolation, RLS (we don't use it)
+

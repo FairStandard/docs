@@ -1,0 +1,89 @@
+---
+title: "Domain model"
+description: "The use-time answer to \"is this capability available on this case.\" It does not decide what a capability does (the owning service does that), what a tier…"
+---
+
+The use-time answer to "is this capability available on this case." It
+does not decide what a capability does (the owning service does that),
+what a tier costs (pricing_parameters.yaml, a future billing service),
+or how a user authenticates (identity-api). It answers one question,
+honestly, every time it's asked, and never remembers the answer.
+
+## Language
+
+**Grant**: One payer's authorization for a capability, a whole tier, or
+a whole pro-bono case to be usable. Never itself a yes/no answer — a
+grant existing does not mean access is currently allowed; `resolve()` is
+what turns a set of grants into a decision, at the moment of use. See
+ADR 0001, models.py.
+_Avoid_: entitlement (bare — an entitlement is the resolved *outcome*,
+a grant is the stored *authorization* that makes an outcome possible),
+subscription, license
+
+**Resolve**: The one door that answers whether a capability is allowed
+right now, for a given workspace, case (or none), and beneficiary (or
+none). Never cached — canon rules that feature access is "resolved at
+use time, never hard-owned," so `resolve()` re-fetches active grants on
+every call. See ADR 0001, resolver.py.
+_Avoid_: check, authorize (this is not an authentication check — it
+answers a billing/access question, not an identity question)
+
+**Capability key**: A registry string (for example `cap.deadlines`),
+never a Python enum — the same extensibility rule every vocabulary field
+on the platform follows (canon locked-decisions.yaml). Owned by
+`CapabilityTier`, seeded from canon's `register/features/*.yaml` as data,
+not hardcoded logic.
+_Avoid_: feature flag (bare — `flag` is a separate, coarser field:
+several capabilities can share one flag)
+
+**Tier**: One cumulative rung on the internal capability ladder — Basic,
+Advanced, Professional, Premium Professional (canon governance.yaml
+`tier_ladder`) — each including everything below it. A `Grant` with
+`tier` set (and `capability_key` null) covers every capability at or
+below that tier, expanded against the `CapabilityTier` registry at
+resolve time, not materialized into one grant row per capability. See
+ADR 0002.
+_Avoid_: plan, package
+
+**Payer / beneficiary**: Deliberately decoupled (canon vision.md,
+"payer-beneficiary decoupling"). `Grant.org_id` is always who paid — the
+org, always (canon: "org always pays"). `Grant.beneficiary_ref` is a
+free-form external reference naming who the grant is *for*, when that
+matters (a client or pro-bono party); null means the grant covers the
+whole case or org, not one named party.
+_Avoid_: owner (nobody "owns" an entitlement — see Grant, above), user
+(a beneficiary is not necessarily a platform user)
+
+**Pro bono**: A whole-case flag (canon pro_bono.yaml `org_case_flag`) —
+a `Grant` with `source="pro-bono"`, `capability_key` and `tier` both
+null, scoped to one `case_id`. Covers every capability on that case, not
+one capability at a time. Distinct from identity-api's `Organization.
+pro_bono` (a legal-aid *org* classification) — entitlements-api never
+reads that field; it is a different fact entirely. See ADR 0003.
+_Avoid_: waiver, discount
+
+**Source**: A registry string on `Grant` — `tier`, `addon`, or
+`pro-bono` today — naming what kind of authorization produced the grant.
+Never a Python enum, same rule as capability key.
+_Avoid_: type (too generic; collides with Python's own `type`)
+
+**IdentityReader**: The seam to identity-api's real `GET /internal/verify`
+door — the only read door identity-api actually serves for org/membership
+facts. Used to confirm the acting bearer token belongs to a live member
+of the paying org, with an authorized org role
+(`settings.authorized_grant_roles`), before a grant is issued or
+revoked. `HttpIdentityReader` speaks the real door through servicekit's
+doorway contract; `FakeIdentityReader` backs it for tests. See ADR 0004
+(and its FS-912 addendum), identity_reader.py, store.py's
+`_require_member`.
+_Avoid_: auth client, org client
+
+**Workspace**: The tenant boundary every row in this store carries.
+Every store method takes `workspace_id` first and filters every query on
+it; a row from another workspace does not surface, not even as a 403 —
+it is a 404 (or an empty list), because it does not exist as far as the
+query is concerned.
+_Avoid_: tenant (bare), org (workspace and org are different axes — an
+org can span workspaces in the platform's later shape; this service
+scopes strictly by workspace)
+

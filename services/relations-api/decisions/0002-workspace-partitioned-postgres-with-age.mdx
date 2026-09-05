@@ -1,0 +1,39 @@
+---
+title: "2. Workspace-partitioned Postgres, graph extension from day one"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Target scale, ruled explicitly: clients onboard at the end of Q1, each
+attorney bringing hundreds of thousands of files — a few million edges
+per workspace, billions platform-wide. The saving property: no relations
+query ever crosses a workspace, so the platform is thousands of small
+graphs, not one big one.
+
+## Decision
+
+Edges live in Postgres, list-partitioned by workspace hash so every
+query is partition-local and capacity grows per workspace group — never
+by redesign. The Apache AGE extension (Apache-2.0, actively released,
+current Postgres support) is installed and verified from day one. One
+honest constraint shapes the layering: AGE queries its OWN graph
+storage, not arbitrary tables — so the partitioned edge table is the
+system of record, plain indexed queries serve the two-hop needs on it
+directly, and the AGE graph is projected FROM the edge table on the same
+database when deeper query needs arrive. Same instance, no migration —
+the projection is a rebuildable read model, never a second truth. A bulk-load door exists from
+day one because onboarding is a burst, not a drip.
+
+## Consequences
+
+One database technology (the platform's own), rich queries without ever
+migrating stores, and onboarding throughput as a designed-for path
+rather than an afterthought.
+

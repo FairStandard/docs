@@ -1,0 +1,56 @@
+---
+title: "2. Jurisdiction-hash-partitioned Postgres"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+A single-tenant service (like relations-api) partitions by workspace,
+because no relations query ever crosses a workspace. This service's
+equivalent boundary is jurisdiction: a family-law attorney working a
+Texas case never reads California statutes in the same request, and the
+content volume (thousands of statutes per state, more once court rules
+and process definitions land) grows per jurisdiction, not globally.
+
+## Decision
+
+The statute table is hash-partitioned by jurisdiction in Postgres,
+following relations-api's workspace-partitioning idiom directly: a
+composite primary key that carries the partition key (`jurisdiction`,
+plus an `Identity()` surrogate id), a uniqueness constraint on
+`(jurisdiction, citation)` that makes a content upload idempotent, and a
+fixed set of hash partitions created alongside the table (`partition_ddl`
+in `models.py`, applied in tests the same way relations-api applies
+`EDGE_PARTITIONS`). The jurisdiction registry itself stays a plain,
+unpartitioned table — it is small by design (one row per onboarded
+state) and every read of it is a deliberate full scan.
+
+## Consequences
+
+Every statute read (by citation, by citation prefix) is partition-local.
+Onboarding a new state's full statute set is one bulk-load call against
+its own partition and touches no other jurisdiction's data. The same
+idiom (COPY into a temp table, fold with `ON CONFLICT DO NOTHING`) that
+proved out at relations-api's edge-load scale carries over unchanged.
+
+## Addendum (2026-08-30): deadline rules follow the same idiom
+
+Deadline rule content (`DeadlineRuleSetVersion`) is the second content
+type in this service, closing out deadlines-api's ADR 0002 seam: it too
+is hash-partitioned by jurisdiction, with `(jurisdiction, practice_area,
+version)` unique instead of `(jurisdiction, citation)` — a publish
+inserts the next version rather than upserting, so a superseded rule
+set stays readable. This is a consistency choice, not a volume one: a
+practice area's rule count runs in the dozens, nowhere near statute
+scale, but every jurisdiction-partitioned table in this service now
+follows one rule instead of two. `Holiday`, the business-day calendar
+content the rules reference, stays a plain unpartitioned table by the
+same reasoning as the jurisdiction registry — holiday volume per
+jurisdiction is bounded and small.
+

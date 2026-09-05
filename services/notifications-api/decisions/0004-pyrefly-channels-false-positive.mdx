@@ -1,0 +1,77 @@
+---
+title: "4. The `channels` untyped-import warning from Pyrefly is a known false"
+description: "positive, left in place rather than suppressed"
+---
+
+positive, left in place rather than suppressed
+
+> Superseded 2026-08-31 (FS-975). The constraint this decision balanced
+> against changed by ruling: warnings fail the build now, in every
+> service, with no suppression permitted. This ADR's own escape clause
+> applied ("if channels.py is ever renamed... this ADR is superseded"):
+> the module is `delivery.py` now - a truer name for what it holds (the
+> delivery-channel adapters) that also ends the collision with the
+> Django Channels distribution name that fooled the diagnostic. The
+> analysis below remains the accurate record of why the warning was a
+> false positive.
+
+Date: 2026-08-30
+
+## Status
+
+Superseded (2026-08-31, see note above)
+
+## Context
+
+`pyrefly check --min-severity warn` reports, on every run:
+
+```
+WARN Cannot find type stubs for module `channels` [untyped-import]
+  --> fanout.py:11:1
+  --> tests/test_fanout_and_api.py:9:1
+Hint: install the `types-channels` package
+```
+
+The estate review guessed this was `project-includes = ["**/*.py*"]`
+picking up compiled `__pycache__/channels.cpython-*.pyc` files (the
+`.py*` glob matches `.pyc` too) and resolving the import to bytecode
+Pyrefly can't introspect.
+
+That theory does not hold up: deleting every `__pycache__` directory in
+the repo before re-running `pyrefly check` does not clear the warning.
+There is also no third-party `channels` package installed — `.venv`
+has none, and `python -c "import channels; print(channels.__file__)"`
+correctly resolves to this repo's own `channels.py`.
+
+The actual cause: Pyrefly ships awareness of common PyPI distribution
+names that typically need a separate stub package (the same idea as
+Mypy's typeshed third-party stubs list) — and `channels` collides with
+Django Channels, a real, unrelated PyPI package. Renaming our own
+`channels.py` to something else (confirmed locally, then reverted)
+makes the warning disappear completely, with the same "0 errors"
+result either way — proving Pyrefly resolves the import correctly for
+actual type checking and only the diagnostic's naming heuristic is
+fooled.
+
+## Decision
+
+Do not suppress this warning, and do not rename `channels.py` to dodge
+a type checker's naming collision. `channels.py` is named and
+referenced throughout this service — ADR 0001, `CONTEXT.md`, `fanout.py`,
+and every test — and a rename to satisfy a linter is the wrong trade
+for the churn it causes.
+
+`project-excludes` was made explicit in `pyproject.toml` for `.venv`
+and generated directories regardless (matching Pyrefly's own defaults,
+so a future default change can't silently start checking generated
+code) — but that change is unrelated to this warning, which is a
+naming collision, not a scope problem.
+
+## Consequences
+
+The warning stays visible on every `pyrefly check --min-severity warn`
+run. Anyone re-triaging Pyrefly output for this service should treat
+it as known-and-accepted, not a new regression, unless the message
+text or line numbers change. If `channels.py` is ever renamed for an
+unrelated reason, this ADR is superseded and can be deleted.
+

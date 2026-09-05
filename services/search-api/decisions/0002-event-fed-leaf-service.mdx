@@ -1,0 +1,32 @@
+---
+title: "2. Event-fed only; this service never calls out"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Search must not reach into other services' private databases (the
+platform's own-Postgres-each ruling), and coupling it to their APIs
+would make it a hub that changes whenever they do.
+
+## Decision
+
+Every document search-api knows about arrives as an `IndexFact` on this
+service's own stream (a servicekit `StreamQueue`): producers publish
+what they want searchable, and the indexer consumes and upserts. This
+service exposes exactly two doors — search and delete-by-entity — and
+initiates no calls to any other service. Evidence stays a leaf: search
+only ever touches its own event stream and its own index.
+
+## Consequences
+
+Producers stay decoupled (publish and move on); search-api stays a leaf
+on the call graph; replaying the fact stream can rebuild the index from
+scratch if it's ever lost.
+

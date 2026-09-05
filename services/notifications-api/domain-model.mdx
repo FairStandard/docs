@@ -1,0 +1,72 @@
+---
+title: "Domain model"
+description: "The one shape every producer publishes: workspace, recipient, kind, subject text, a link, and the source service's own provenance id. Already finished — this…"
+---
+
+**NotificationEvent**:
+The one shape every producer publishes: workspace, recipient, kind,
+subject text, a link, and the source service's own provenance id.
+Already finished — this service renders nothing from it.
+_Avoid_: message (bare, ambiguous with messaging-api), alert
+
+**Notification**:
+The stored record of one event, and the in-app channel's own delivery —
+there is no separate "in-app delivery" row, this IS it. Carries read
+state.
+_Avoid_: alert, message
+
+**Kind**:
+A registry string naming what happened (`deadline.approaching`,
+`filing.accepted`, ...). Defined by producers, never a closed vocabulary
+here — this service enforces structure, not membership.
+_Avoid_: type (channel already uses that shape of word), category
+
+**Channel**:
+A registry string naming a delivery surface (`in_app`, `email`,
+`push`, ...) plus the adapter behind it. Adding a channel means one
+adapter and one registration — fan-out never changes.
+_Avoid_: transport, provider
+
+**ChannelPreference**:
+A recipient's own rule: for a kind pattern and a channel, allow or mute.
+Default is allow — a recipient with no rule for a kind/channel still
+gets it, because opt-out is the only shape that doesn't silently lose
+every new kind a producer adds.
+_Avoid_: subscription (implies opt-in), setting (bare)
+
+**Kind pattern**:
+An exact kind, or a prefix ending in `*` (`deadline.*`). The only
+wildcard shape this service understands; an exact match always beats a
+matching wildcard.
+_Avoid_: glob, filter
+
+**Feed**:
+A recipient's own notifications, newest first, with the unread count —
+the one read a client actually wants, not a raw table scan.
+_Avoid_: inbox, timeline
+
+**Fan-out**:
+The worker that turns one event into zero or more channel deliveries,
+one preference check per channel. Runs beside the HTTP surface as its
+own process.
+_Avoid_: dispatch, broadcast
+
+**Publish door**:
+`POST /internal/publish` — the same ingestion path as the stream, for a
+producer without direct stream access. Not a second code path: it just
+writes to the stream fan-out already consumes.
+_Avoid_: webhook, ingest endpoint
+
+**Workspace scoping**:
+Every Notification and every ChannelPreference belongs to exactly one
+workspace; every read is filtered by it first, the same discipline
+every service in the platform carries.
+_Avoid_: tenant, org
+
+**Caller scoping**:
+The feed and preference doors also carry the recipient's own id
+(`X-Caller-Id`, messaging-api's convention) — a recipient reads and
+mutates only their own notifications and preferences, never another
+recipient's, even within the same workspace.
+_Avoid_: user id (the header name is the platform's word for it)
+

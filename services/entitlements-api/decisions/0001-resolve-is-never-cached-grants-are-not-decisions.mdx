@@ -1,0 +1,56 @@
+---
+title: "1. Resolve is never cached; a grant is not itself a decision"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (vision.md, case-scoped-entitlements.md) rules that "feature access
+is RESOLVED at use time, never hard-owned — the application-level
+analogue of design tokens." That single sentence packs in two decisions
+this ADR separates: (1) resolution happens fresh on every use, never
+once and remembered, and (2) the stored authorization (who paid, for
+what, on which case) is a different thing from the answer to "is this
+allowed right now" — the same status/urgency split deadlines-api made in
+its own ADR 0001, for the same reason: conflating the two produces a
+system that has to remember to re-stamp a decision on a schedule, which
+drifts the moment nobody runs the job, or that caches an answer past the
+moment a grant is revoked.
+
+## Decision
+
+`Grant` (models.py) is the only stored fact — one payer's authorization,
+scoped by workspace, org, optionally a case and a beneficiary, with an
+active window and a `source` registry string. It never holds an
+allowed/denied bit.
+
+`resolve()` (resolver.py) is a pure function — `grants: list[GrantFact],
+capability_key, tier_required, case_id, beneficiary_ref, now ->
+Decision(allowed, reason, grant_id)` — deny-by-default, taking `now` and
+the candidate grants as plain parameters. It never reads a clock, never
+touches a database, and is never memoized (no `functools.cache`, no
+module-level dict). `store.py`'s `Store.resolve()` is the only caller
+that fetches grants from Postgres, and it does so fresh on every
+invocation — there is no request-scoped or process-scoped cache in
+front of it anywhere in this service.
+
+Reasons are a fixed, small vocabulary today (`"grant found"`, `"tier
+includes it"`, `"pro bono"`, `"nothing"`) returned as plain strings, not
+an enum — consistent with every other vocabulary field on the platform.
+
+## Consequences
+
+`tests/test_store.py::test_revoke_then_resolve_immediately_denies_never_cached`
+is the load-bearing proof: revoke a grant, then resolve the same
+capability/case in the same test, and the answer flips immediately. A
+future performance concern (resolve is on a hot path for every gated
+action) is a real tradeoff to revisit, but caching resolve() would
+directly violate this ADR — that tradeoff is Christopher's call to make
+explicitly, not a default to slip in quietly.
+

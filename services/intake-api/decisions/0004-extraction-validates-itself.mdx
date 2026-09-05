@@ -1,0 +1,21 @@
+---
+title: "Extraction validates itself and escalates instead of failing silently"
+description: "Ruled 2026-08-30 after layout experiments proved the ported parsers emit wrong data with zero signal when a PDF's layout differs from what they expect. The…"
+---
+
+Ruled 2026-08-30 after layout experiments proved the ported parsers emit
+wrong data with zero signal when a PDF's layout differs from what they
+expect. The rule: the right data must come off the page regardless of how
+the page is laid out. Every parse is checked against what the report says
+about itself (declared counts) and against what a record must have
+(parties, timestamps). A parse that fails validation escalates to the AI
+extraction tier; a result that still fails is flagged for human review.
+Nothing invalid is ever delivered silently. Deterministic parsing runs
+first, so the expensive reader only runs on the failures — the same
+deterministic-first cost law the analysis service lives by.
+
+Scope note: this decision ships the machinery (validation, the escalation
+tier, and their tests); the ingest engine that FORCES every import through
+the validate-escalate-flag pipeline is the next change, and no delivery
+path may be built that bypasses it.
+

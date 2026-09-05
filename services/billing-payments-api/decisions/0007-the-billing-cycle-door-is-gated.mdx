@@ -1,0 +1,31 @@
+---
+title: "The billing-cycle door is token-gated and runs on the server's clock"
+description: "Decided 2026-08-31, closing a hole the estate audit found."
+---
+
+Decided 2026-08-31, closing a hole the estate audit found.
+
+`POST /billing-cycle/run` is unlike every other door in this service: it
+crosses every workspace (ADR 0005 documents that deliberately) and it
+moves money state — generating platform invoices and flipping
+subscriptions to past-due. As first landed it accepted any caller and a
+caller-supplied `now`, which meant anyone who could reach it could force
+those transitions for an arbitrary future instant.
+
+Two rules now hold:
+
+- **Token gate.** The door requires `X-Cycle-Token` to match
+  `BILLING_CYCLE_TOKEN`. An empty configured token disables the door
+  entirely (403 for every call) — deny-by-default, never
+  open-by-default. The external cron is the one caller that carries the
+  token.
+- **Server clock only.** The door always runs at `datetime.now(UTC)`.
+  Determinism for tests lives at the store layer, where
+  `Store.run_billing_cycle(now=...)` takes the instant explicitly; the
+  HTTP surface never lets a caller pick what time it is.
+
+A single shared token is deliberately minimal. The estate has no
+service-to-service machine identity yet (identity-api's
+`/internal/verify` covers user tokens only); when that exists, this door
+should move onto it and this ADR gets superseded.
+

@@ -1,0 +1,55 @@
+---
+title: "Domain model"
+description: "One typed relationship fact: a subject (type, id), an object (type, id), and a relation kind — \"this record is an attachment of that message.\" Edges hold…"
+---
+
+**Edge**:
+One typed relationship fact: a subject (type, id), an object (type, id),
+and a relation kind — "this record is an attachment of that message."
+Edges hold identifiers only, never another service's data.
+_Avoid_: link (messaging-api owns that word for its bundles), relationship (bare)
+
+**Relation kind**:
+The vocabulary of ways two things can relate (attachment_of, same_thread,
+annotated_by, flagged_by_finding, mentions_same_party...). Defined once in
+the shared vocabulary package every service imports — never invented ad
+hoc at a call site.
+_Avoid_: edge type (kind is the field name), label
+
+**Reference**:
+A (type, id) pair naming a thing another service owns — a record, a file,
+a finding, a note, a party. The relations service knows nothing else
+about it.
+_Avoid_: pointer, foreign key
+
+**Fact**:
+A relationship assertion published by the service that discovered it,
+consumed by this service's projector and written as an Edge. Facts are
+the steady-state ingestion path.
+_Avoid_: event (bare), message
+
+**Bulk load**:
+The onboarding door: millions of edges for one workspace in one burst,
+loaded directly, built for the day an attorney brings their whole
+practice.
+_Avoid_: import (intake-api owns that word), migration
+
+**Neighborhood**:
+The answer to "what relates to this?" — edges around one reference, or
+around everything tied to one party, always within one workspace.
+_Avoid_: graph (bare), traversal (the mechanism, not the answer)
+
+**Case scoping**:
+The second scoping field every Edge carries, beside the workspace: which
+case the relationship belongs to. Like the workspace id, it is a shared
+platform identifier, not another service's data — it exists so "everything
+related within this case" is one indexed read, never a cross-service join.
+_Avoid_: matter, dispute
+
+**Workspace scoping**:
+The property the whole design rests on: no query ever crosses a
+workspace. Every edge belongs to exactly one workspace; every read is
+filtered by it first. Each workspace's graph stays small forever, and
+the platform scales by adding capacity per workspace group.
+_Avoid_: tenant, org
+

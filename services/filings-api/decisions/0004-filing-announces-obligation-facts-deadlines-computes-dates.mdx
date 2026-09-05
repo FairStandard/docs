@@ -1,0 +1,51 @@
+---
+title: "4. A filing announces obligation facts; deadlines-api computes the date"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The build order rules that filings-api does not own deadlines — it only
+"announces facts" (`kind`, `due-basis`) when a filing creates an
+obligation, and deadlines-api is the engine that turns those facts into
+an actual due date. Deadlines-api's own rule engine already expects rule
+content — an event kind, an offset, a calendar — read through a
+StateLawReader seam (its ADR 0002); filings-api emitting a raw due date
+here would duplicate that arithmetic on the wrong side of the boundary
+and risk the two services disagreeing about the same date.
+
+## Decision
+
+When a filing's status is set to `filed` (`store.set_status`), filings-
+api reads the filing's practice area's current pack, evaluates
+`engine.obligations_for(recommendation_set, filing_type)`, and stores the
+result on `Filing.obligations` — a list of plain facts,
+`{"kind": ..., "due_basis": ...}`. `due_basis` is descriptive content
+(for example `"20_calendar_days_after_filed"`), not a computed
+`datetime` — filings-api does not do date arithmetic. `filed_at` is
+stamped alongside, as the anchor a later consumer would apply `due_basis`
+to.
+
+These facts are both returned in the `PATCH /internal/filings/{id}/status`
+response and persisted on the row, so a consumer (deadlines-api, in a
+later wave) can either read them from the response at filing time or
+list them later via `GET /internal/filings/{id}`. No outbound call to
+deadlines-api exists in this slice — filings-api does not know
+deadlines-api exists. This mirrors the same "announce a fact, let the
+next service compute what it means" pattern deadlines-api itself uses
+for the case events case-api hands it (deadlines-api's ADR 0003).
+
+## Consequences
+
+A practice area with no matching `ObligationRule` for a filing type files
+with an empty `obligations` list — honest, not silently broken. If
+deadlines-api later needs a push (a webhook, an event) rather than a pull
+against this row, that is a new decision for whichever service consumes
+these facts first — not built speculatively here.
+

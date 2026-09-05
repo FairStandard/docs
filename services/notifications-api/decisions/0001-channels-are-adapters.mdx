@@ -1,0 +1,43 @@
+---
+title: "1. Channels are adapters; fan-out never knows which one it holds"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The platform needs one delivery layer, not one per channel, and the set
+of channels will grow (in-app now, email and push behind a seam this
+land, others later — SMS, Slack, whatever a future integration needs).
+If fan-out branched on channel identity, every new channel would mean
+editing the one piece of logic every notification flows through.
+
+## Decision
+
+Every channel — including in-app — implements the same `Channel`
+protocol: a registry-string `name` and an async `deliver(event)`.
+Fan-out holds a list of channels, checks the recipient's preference for
+each, and calls `deliver` on the ones allowed. It never inspects which
+channel it is calling.
+
+`in_app` is real: `deliver` writes the `Notification` row, so the row
+IS the in-app delivery record, not a mirror of one that lives
+elsewhere. `email` and `push` are Fakes this land — they record what
+they would have sent, with no SMTP client or provider SDK anywhere in
+the codebase. A later PR replacing `FakeEmailChannel` with a real
+adapter touches only `delivery.py (renamed from channels.py, ADR 0004)` and the `build_fanout` wiring in
+`fanout.py`.
+
+## Consequences
+
+Adding a channel is additive: one adapter, one line in the registration
+list. Tests exercise real fan-out logic against fakes with no test
+double baked into fan-out itself. The cost is that email/push send
+nothing real yet — acceptable, since the task for this land is the
+seam, not a specific provider integration.
+

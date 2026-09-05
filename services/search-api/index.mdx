@@ -1,0 +1,65 @@
+---
+title: "search-api"
+sidebarTitle: "Overview"
+description: "FairStandard's search service: workspace-scoped full-text, faceted, and typo-tolerant retrieval, fed only by events. See CONTEXT.md for the domain glossary…"
+---
+
+FairStandard's search service: workspace-scoped full-text, faceted, and
+typo-tolerant retrieval, fed only by events. See `CONTEXT.md` for the
+domain glossary and `docs/adr/` for the index technology choice and
+architecture decisions.
+
+## Doors
+
+- `GET /internal/search?q=...&entity_kind=...&facets=...&page=...&per_page=...`
+  (requires `X-Workspace-Id`)
+- `DELETE /internal/entity/{entity_kind}/{entity_id}` (requires
+  `X-Workspace-Id`) — redaction, a real delete.
+
+## What feeds it
+
+Producers publish `IndexFact` records onto this service's own servicekit
+`StreamQueue`; the indexer consumes and upserts into a Postgres +
+`pg_search` (ParadeDB) index. This service never calls another service.
+
+Run the indexer alongside the HTTP surface as its own process:
+
+```bash
+uv run python indexer.py
+```
+
+## Local setup
+
+```bash
+uv sync
+uv run pre-commit install
+```
+
+## Running the gates
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check .
+uv run pytest -q
+```
+
+Tests spin up real containers via `testcontainers`: `paradedb/paradedb`
+for the index and `redis:8` for the stream — Docker must be running.
+
+Migrations are real alembic — `uv run alembic upgrade head` against the
+same `SEARCH_DATABASE_URL`; the chain creates the pg_search extension
+and the BM25 index too, and `tests/test_migrations.py` runs it both
+directions against a real ParadeDB container.
+
+## Configuration
+
+Environment variables, prefixed `SEARCH_`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SEARCH_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/search` | The service's own Postgres |
+| `SEARCH_REDIS_URL` | `redis://localhost:6379/0` | The IndexFact stream |
+| `SEARCH_INDEX_STREAM` | `search:index-facts` | Stream name |
+| `SEARCH_INDEX_GROUP` | `search-indexer` | Consumer group name |
+

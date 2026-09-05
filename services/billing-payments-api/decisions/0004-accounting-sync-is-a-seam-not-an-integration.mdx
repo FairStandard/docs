@@ -1,0 +1,38 @@
+---
+title: "4. Accounting sync is a seam, not an integration"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+`cap.accounting-sync` (canon) names a real capability: a firm connects
+its accounting software and keeps billing data in sync. Every firm's
+accounting software is different (QuickBooks, Xero, a bookkeeper's
+spreadsheet), each with its own auth model and API, and none of that
+integration work is needed for this land's invoice/retainer/time-entry
+doors to be correct and usable.
+
+## Decision
+
+`accounting.py` defines `AccountingSync` as a `Protocol` with one
+method, `sync_invoice`, returning a `SyncResult`. The only
+implementation is `FakeAccountingSync`, which reports `synced=False`
+with no external reference on every call — a deliberate, visible "not
+wired up" answer, distinct from what a real provider's failure would
+report, so a caller can never mistake "no integration configured" for
+"the sync happened and something went wrong."
+
+## Consequences
+
+Doors and workers that will eventually trigger a sync (e.g. after
+`send_invoice`) can be written against the seam today. No firm can
+actually sync to their accounting software from this land — that is
+real, separate integration work, one provider at a time, tracked
+outside this ADR.
+

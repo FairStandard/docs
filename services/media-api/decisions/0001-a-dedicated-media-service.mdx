@@ -1,0 +1,36 @@
+---
+title: "1. A dedicated media service"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The platform's acoustic pipeline — transcription, diarization, speaker
+identity, emotion measurement — runs as workers inside the monolith,
+writing to four different stores. The 2026-08-30 boundary scout confirmed
+it is cleanly separable: its only tie to case data is a case id on each
+recording.
+
+## Decision
+
+Media analysis becomes its own service, media-api: the pipeline workers,
+speaker identity and baselines, and measurement ingestion. Recording
+bytes stay in the evidence store (read through its API). Photo and video
+frame extraction stay OUT (a different capability that shares an input
+file, not a domain). Model TRAINING stays out too (ruled 2026-08-30):
+this service ships with the models it uses; improving them is a separate
+concern with its own infrastructure and spend.
+
+## Consequences
+
+The heaviest, slowest, most model-bound part of the platform scales on
+its own axis — worker count, model versions, memory — without moving
+anyone else's foundation. The emotion-model swap (custom model replacing
+the current external API) happens behind this service's seams.
+

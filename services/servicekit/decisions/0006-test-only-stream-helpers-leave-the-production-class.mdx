@@ -1,0 +1,45 @@
+---
+title: "Test-only stream helpers leave the production class"
+description: "Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949). Breaking change, in 0.2.0 — deliberately, per the estate review: a consumer adoption…"
+---
+
+Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949).
+Breaking change, in `0.2.0` — deliberately, per the estate review: a
+consumer adoption pass (a later, separate piece of work) updates every
+caller; this is the last version to carry the old shape at all.
+
+`StreamQueue.write_raw_for_tests` and `StreamQueue.reset_for_tests` used
+to live on the production class. Neither belongs there: a service's real
+surface is `submit`, `run_worker`, `pending_count`, `dead_letter_count`,
+`read_dead_letters`, `close` — the operations a running service actually
+calls. The two test helpers are now plain functions in
+`servicekit.testing`, over a queue instance passed in
+(`write_raw_for_tests(queue, fields)`, `reset_for_tests(queue)`), not
+methods reached through it. `tests/test_streams_testing.py`'s first
+assertion is the point made mechanical:
+`test_the_production_class_carries_neither_helper` checks
+`hasattr(StreamQueue, "write_raw_for_tests")` is `False`.
+
+`servicekit.testing` reaches `queue`'s private attributes
+(`_ensure_group`, `_stream`, `_redis`, `_group_ready`) directly — that is
+intentional, same-package access to the one internal state a test needs
+to reset, not a leak of StreamQueue's internals to every consumer.
+Production code must never import `servicekit.testing`; nothing enforces
+that mechanically today, the same way nothing stops a service from
+importing a test-only module from anywhere else in this repo.
+
+Alongside the move: `reclaim_idle_ms == 0` used to do double duty as
+"don't block" in `_read_and_process`'s `xreadgroup` call — a
+test-fixture-only knob overloaded onto a value that also, and
+separately, controls when `xautoclaim` reclaims an idle message. `no_block`
+is now the explicit parameter for the first meaning; `reclaim_idle_ms`
+keeps only the second. `reclaim_idle_ms == 0` still implies `no_block`
+when `no_block` is not passed, so nothing already depending on the old
+double duty breaks during the transition — but a caller that wants
+non-blocking reads with a real reclaim threshold can now ask for exactly
+that, which the old single knob could never express.
+
+Deletion test: `tests/test_streams_testing.py::test_the_production_class_carries_neither_helper`
+— the mechanical proof the two methods are gone from `StreamQueue`, not
+just deprecated.
+

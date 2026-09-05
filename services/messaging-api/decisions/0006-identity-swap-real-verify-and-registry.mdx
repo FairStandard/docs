@@ -1,0 +1,98 @@
+---
+title: "6. Swap the stand-in for identity-api's real verify door and registry"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+ADR 0005 built this service against two stand-ins, both blocked on
+identity-api not existing yet: the caller's case relationship arrived as
+a plain `X-Case-Relationship` header the caller asserted, and the set of
+valid relationship values was a code-seeded frozenset
+(`relationships.SEEDED_RELATIONSHIPS`) that only a code change could
+extend.
+
+identity-api is carved now. Its real HTTP surface (`identity-api/main.py`)
+serves exactly what this service needs: `GET /internal/verify` takes a
+bearer token and returns the caller's `user`, their org `memberships`,
+and their `case_relationships` — each a `{case_id, case_relationship}`
+pair read straight off the `CaseTeamMember` table. That table's
+`case_relationship` column is only ever written after a check against
+identity's own `CaseRelationship` registry (identity-api ADR 0003) — so
+any value `/internal/verify` hands back is already a live, registry-valid
+case-team fact. There is no other case-relationship door: no
+`GET /internal/case-team/{case_id}` lookup exists, so a seam shaped
+around "fetch the case team" would have no real door to call — the same
+trap entitlements-api's ADR 0004 avoided for `IdentityReader` there.
+This service's `IdentityReader` is shaped the same way, against the same
+door, for the same reason.
+
+## Decision
+
+`identity.py` adds `IdentityReader` (a `Protocol` with one method,
+`verify(token) -> VerifiedIdentity | None`), `HttpIdentityReader`
+(speaks `GET /internal/verify` through servicekit's doorway contract —
+`call_with_retries`, `Rejected`, `Unavailable`, a `401` mapped to `None`
+rather than raised), and `FakeIdentityReader` (the same promise in
+memory). `tests/test_identity.py` contract-tests both against one shared
+response shape, the same pattern `tests/test_upstream.py` already used
+for the evidence/analysis/relations doorways and entitlements-api's
+`tests/test_identity_reader.py` already used for this exact door.
+
+`gate.PackageService` takes an `IdentityReader` in its constructor. Every
+door's method signature changes from `actor_relationship: str` +
+`created_by: str` (two things the caller asserted) to one
+`actor_token: str` (one thing the caller proves). Internally,
+`_require_relationship` calls `identity.verify(actor_token)`, looks up
+the entry for the request's `case_id`, and returns `(created_by,
+relationship)` — `created_by` is now the verified `user_id`, never a
+caller-supplied id. `main.py` drops the `X-Case-Relationship` and
+`X-Caller-Id` headers entirely in favor of the standard `Authorization:
+Bearer` header, forwarded as `actor_token`.
+
+Ordering: `finalize`, `vault_get`, and `verify` don't know the request's
+`case_id` until they've fetched the draft or package (both already carry
+`case_id` — no new route parameters needed). Those three now fetch first
+(`GateError` if missing) and check the relationship against the fetched
+record's `case_id` second, rather than checking before any lookup. This
+is a behavior change from ADR 0005's ordering, worth naming: a caller
+who does not verify at all, or isn't on the named case's team, was
+previously always refused by role before the store was touched; now a
+truly nonexistent draft/package still 404s-as-`GateError` even for a
+bad token. No test relied on the old ordering — `test_gate.py`'s
+role-wall tests all use drafts/packages that exist — so this is a
+documented consequence, not a silent one.
+
+`relationships.py` drops `SEEDED_RELATIONSHIPS` and
+`validate_relationship` outright — there is nothing left to keep in sync
+locally, since identity's registry is now the only vocabulary check that
+matters and it happens at identity's own write time. `SENDER_RELATIONSHIPS`
+and `RECIPIENT_RELATIONSHIPS` stay: identity's `case_relationship`
+registry is a flat name table with no sender/recipient axis, so which
+end of a delivery a relationship sits on remains messaging-api's own
+flow-structure policy (canon-fixed, not identity's data to serve). A
+relationship identity has never been told about before by this service
+(a brand-new registry value) is simply absent from both sets and denied
+by structure — `RoleError`, never a crash, never a silent allow. This is
+`tests/test_api.py::test_a_new_registry_relationship_flows_through_without_code_changes`.
+
+## Consequences
+
+The relationship checks — sender-only build/finalize, recipient-only
+vault, full parity for `self_represented_party` — are unchanged in
+substance; only their source moved, exactly as ADR 0005 promised. Every
+caller now needs a real bearer token identity-api will verify; there is
+no more caller-asserted identity or relationship anywhere in this
+service. Extending the relationship vocabulary is now purely an
+identity-api registry insert (`POST /internal/registries/case_relationship`)
+— zero messaging-api code changes, and zero messaging-api deploys, to
+recognize the new value as a valid case-team fact. Whether that new
+value gets to send or receive is still messaging-api's call, made in
+`relationships.py`, same as before.
+

@@ -1,0 +1,132 @@
+---
+title: "4. Listings publish IndexFacts to search-api, best-effort"
+description: "Date: 2026-08-31"
+---
+
+Date: 2026-08-31
+
+## Status
+
+Accepted
+
+## Context
+
+Estate hygiene sweep FS-948 wires marketplace as a producer onto
+search-api's index-fact stream, so a listing becomes findable through
+search-api's full-text and faceted search — a real capability ADR 0001
+deferred ("discovery stays local until search-api builds full text").
+search-api is event-fed only (its own ADR 0002): every document it knows
+about arrives as an `IndexFact` on its stream, published by a
+`servicekit.StreamQueue`. It is not distributed as an installable
+package the way relations-api now is (relations-api's own restructure,
+this same sweep) — so `search_facts.py` is a deliberate, contract-tested
+copy of search-api's `vocabulary.py`/`queueing.py` wire shape, the same
+posture intake-api used for relations-api before that package existed.
+If search-api's wire shape changes, `search_facts.py` and
+`tests/test_search_facts.py` go stale unless refreshed from a fresh read
+of that repo.
+
+## Decision
+
+`store.py`'s `create_listing`, `upsert_profile`, and `deactivate_listing`
+each publish a full `IndexFact` for the listing after their write
+commits — `search_publisher.SearchEmitter`, the same best-effort,
+cooldown-circuit-breaker posture as intake-api's `RelationsEmitter`
+(docs reference: intake-api/relations_emitter.py, intake-api's own
+docs/adr/0009) and messaging-api's version of the same pattern. A fact
+that fails to publish is dropped and logged, never retried by
+marketplace and never allowed to fail or block a listing/profile/
+deactivation request — search is a downstream convenience, not a source
+of truth marketplace depends on. A single unreachable-Redis failure
+trips a cooldown circuit breaker so a burst of listing writes during an
+outage does not each pay the full connect timeout in turn.
+
+**search-api's index has no partial-update door** — every publish
+carries the whole document (workspace_id, entity, title, body, facets,
+visibility), so each of the three call sites builds the complete
+`IndexFact` fresh rather than a diff:
+
+- `create_listing`: publishes immediately, before a `Profile` exists.
+  `title` falls back to `provider_ref` (the only identifying text
+  available yet); `body` is empty; `facets["status"]` is `"draft"`.
+- `upsert_profile`: publishes the real content — `title` is
+  `display_name`, `body` is `headline` and `biography` joined, and
+  `facets` carries `specialties`/`jurisdictions`/`service_kinds` plus
+  the listing's current `status`.
+- `deactivate_listing`: re-publishes with `facets["status"]` updated to
+  `"inactive"`, keeping whatever profile content was last published (a
+  fresh read of the `Profile` row, so the republish does not blank out
+  title/body).
+
+### The deletion test
+
+Delete `search_publisher.py` (or configure `search_redis_url=""`, which
+selects `NullSearchEmitter`) and re-run `tests/test_search_wiring.py`:
+every store call's own return value is identical — the search publish is
+never on the path a caller observes.
+`tests/test_search_publisher.py::test_emit_does_not_raise_when_redis_is_unreachable`
+proves `emit()` itself never raises against a real closed port, and
+`test_many_facts_against_a_downed_stream_cost_about_one_timeout` proves
+the circuit breaker's actual purpose.
+
+## Update, 2026-08-31: both open questions closed on search-api's side
+
+search-api's own docs/adr/0004 (Finale remediation pass) added a third
+`Visibility` value, `"public"`, and promoted `status` to a first-class
+`IndexFact`/`Document` field with a new `GET /public/search` door that
+filters `visibility == "public" AND status == "active"`. marketplace now
+adopts both: `_listing_index_fact` (store.py) publishes every listing
+with `visibility="public"` and `status=listing.status` (no longer a
+`facets["status"]` key), and `activate_listing` now emits too — closing
+the "activate does not itself publish" gap named below, since activation
+is exactly the transition that makes a listing publicly findable.
+`search_facts.py` and `tests/test_search_facts.py` were refreshed from a
+fresh read of search-api's `vocabulary.py`/`queueing.py` on 2026-08-31 to
+match the new eight-field wire shape.
+
+The two paragraphs below are kept for history — they are the gaps this
+update closes, not still-open questions.
+
+**search-api has no "active" concept.** `discover_listings` (marketplace's
+own local discovery) only ever returns `status == "active"` listings;
+search-api's index has no notion of listing lifecycle at all. This
+integration carries that state as `facets["status"]`, so a consumer of
+search-api wanting only live listings must filter on that facet — search-
+api will happily return a `"draft"` or `"inactive"` listing to a query
+that does not filter on it. Nothing in this change enforces that filter
+on search-api's side. There is also a gap between events: `activate_listing`
+(draft → active) does not itself publish — the document's `facets["status"]`
+only catches up the next time `upsert_profile` or `deactivate_listing`
+runs. Both are acceptable for a first wiring and worth closing in a
+follow-up once search-api has a caller that actually needs to filter by
+listing status.
+
+**search-api's `Visibility` has no public option.** `IndexFact.visibility`
+is `"workspace" | "restricted"` — both scoped, and search-api's own
+`/internal/search` door always requires an `X-Workspace-Id` header
+(search-api's ADR 0002: "this service never calls another service" and
+its main.py's every route is workspace-scoped). Marketplace listings are
+deliberately NOT workspace-scoped on the public discovery door (ADR
+0001, canon "public discovery has no tenant") — the entire point of a
+listing is to be found by a stranger with no workspace at all. Indexing
+a listing under its owning org's `workspace_id` therefore makes it
+findable through search-api only by someone who already has that
+workspace's header, which is not marketplace's actual public-discovery
+audience. This is a real gap between search-api's current vocabulary and
+what a public marketplace listing needs; closing it (a third
+`Visibility` value, or a separate unscoped index) belongs to whichever
+service owns that decision, not this sweep. Recorded here so it is not
+mistaken for something this change already solved.
+
+## Consequences
+
+The search index can lag or hold a stale/wrong-status document during a
+Redis outage or between the events listed above, without that ever
+becoming marketplace's problem — acceptable because the index is
+rebuildable by re-publishing (create/update/deactivate are the only
+paths that write listings, and each one republishes the whole document).
+The two open questions above mean this integration is not yet the
+public-facing search marketplace listings ultimately need; it is the
+event-plumbing that a follow-up closing either gap can build on without
+re-deriving the wire contract.
+

@@ -1,0 +1,378 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "PackPublish": {
+        "properties": {
+          "sections": {
+            "additionalProperties": true,
+            "title": "Sections",
+            "type": "object"
+          }
+        },
+        "required": [
+          "sections"
+        ],
+        "title": "PackPublish",
+        "type": "object"
+      },
+      "PracticeAreaList": {
+        "properties": {
+          "practice_area_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Practice Area Keys",
+            "type": "array"
+          }
+        },
+        "title": "PracticeAreaList",
+        "type": "object"
+      },
+      "PracticeAreaRegister": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "PracticeAreaRegister",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "packs-api",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/internal/practice-areas": {
+      "get": {
+        "operationId": "list_practice_areas_internal_practice_areas_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PracticeAreaList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Practice Areas"
+      }
+    },
+    "/internal/practice-areas/{practice_area_key}": {
+      "get": {
+        "operationId": "get_practice_area_internal_practice_areas__practice_area_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "practice_area_key",
+            "required": true,
+            "schema": {
+              "title": "Practice Area Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Practice Area Internal Practice Areas  Practice Area Key  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Practice Area"
+      },
+      "post": {
+        "operationId": "register_practice_area_internal_practice_areas__practice_area_key__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "practice_area_key",
+            "required": true,
+            "schema": {
+              "title": "Practice Area Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PracticeAreaRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Register Practice Area Internal Practice Areas  Practice Area Key  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Practice Area"
+      }
+    },
+    "/internal/practice-areas/{practice_area_key}/packs": {
+      "post": {
+        "operationId": "publish_pack_internal_practice_areas__practice_area_key__packs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "practice_area_key",
+            "required": true,
+            "schema": {
+              "title": "Practice Area Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackPublish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Publish Pack Internal Practice Areas  Practice Area Key  Packs Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Pack"
+      }
+    },
+    "/internal/practice-areas/{practice_area_key}/packs/current": {
+      "get": {
+        "operationId": "get_current_pack_internal_practice_areas__practice_area_key__packs_current_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "practice_area_key",
+            "required": true,
+            "schema": {
+              "title": "Practice Area Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Current Pack Internal Practice Areas  Practice Area Key  Packs Current Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Current Pack"
+      }
+    },
+    "/internal/practice-areas/{practice_area_key}/packs/{version}": {
+      "get": {
+        "operationId": "get_pack_version_internal_practice_areas__practice_area_key__packs__version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "practice_area_key",
+            "required": true,
+            "schema": {
+              "title": "Practice Area Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Pack Version Internal Practice Areas  Practice Area Key  Packs  Version  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pack Version"
+      }
+    }
+  }
+}

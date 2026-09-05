@@ -1,0 +1,29 @@
+---
+title: "Practice areas are data, not code"
+description: "Ruled 2026-08-30, restating the platform's binding agnosticism law (platform DESIGN.md section 8: \"Family law is the first vertical, not the platform\"). There…"
+---
+
+> Partially superseded by ADR 0003 (2026-08-31): a `PracticeArea`
+> registry table exists now, and the list door reads it — registration,
+> not publication, is what makes a practice area exist. The core stance
+> (practice areas are data, never a hardcoded enum) still holds.
+
+Ruled 2026-08-30, restating the platform's binding agnosticism law
+(platform `DESIGN.md` section 8: "Family law is the first vertical, not
+the platform"). There is no `PracticeArea` enum, table, or model anywhere
+in this service. A practice area is just a string key that happens to have
+packs published under it — `list_practice_areas` is a `SELECT DISTINCT`
+over the one `Pack` table, not a lookup against a fixed list.
+
+A pack's content sections work the same way: `Pack.sections` is a JSON
+object keyed by section kind (`lifecycle_phases`, `finding_types`,
+`document_categories`, ...), not a set of typed columns. A new section
+kind — a category of configuration nobody has invented yet — is added by
+publishing content with a new key. Nothing in this service's schema or
+code changes when that happens, because the schema was never shaped
+around what a practice area contains.
+
+Family law (seeded in `seed/family-law.json`, DESIGN.md section 6) is the
+first pack published through this door, and it is exactly that: the first
+pack, not a hardcoded shape every other practice area has to fit.
+

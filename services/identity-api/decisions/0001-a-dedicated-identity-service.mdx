@@ -1,0 +1,33 @@
+---
+title: "A dedicated identity service; the organization pays; registries are data"
+description: "Ruled 2026-08-30, following the platform's slicing rulings (six services, own Postgres each, private queues): identity — accounts, organizations, membership,…"
+---
+
+Ruled 2026-08-30, following the platform's slicing rulings (six services,
+own Postgres each, private queues): identity — accounts, organizations,
+membership, case teams, and the audience registries — is carved out as its
+own service with its own Postgres database, not folded into any other
+carved service.
+
+Two design laws travel with the carve-out and are locked, not open for
+re-litigation by a future caller:
+
+1. **The organization is always the paying customer.** Never the account.
+   Billing amounts live elsewhere later, but the payer role is structural
+   here: `Organization` carries jurisdiction and pro-bono status because
+   those are the org's own facts, not derived from any one member.
+
+2. **Every vocabulary this service exposes is an extensible registry
+   stored as data**, not a closed enum or a `CHECK` constraint. Org role
+   (owner/attorney/staff/provider) and case relationship
+   (representing_professional/represented_party/self_represented_party/
+   external_participant) ship as seeded rows in registry tables. Adding a
+   value is an insert. There is no `user_type` column anywhere in this
+   service — org role lives on the membership, case relationship lives on
+   the case-team record, and presentation register is derived at read
+   time, never stored.
+
+Other services that need to know who someone is call this service's
+`/internal/verify` endpoint rather than keeping their own copy of account
+or membership state.
+

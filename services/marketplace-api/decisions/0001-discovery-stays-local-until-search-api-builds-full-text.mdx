@@ -1,0 +1,59 @@
+---
+title: "1. Discovery filters its own Postgres for now; search-api owns full-text later"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (cap-marketplace.yaml) requires that clients and self-represented
+parties can "find attorneys and legal service providers" by specialty,
+county/jurisdiction, and legal service. Two shapes were considered for
+`GET /public/listings`:
+
+1. **Filter this service's own Postgres** — `Listing`/`Profile` rows,
+   joined and filtered by exact match on the
+   `specialties`/`jurisdictions`/`service_kinds` JSON columns.
+2. **Build a search index inside marketplace-api** — tokenize
+   biographies and headlines, rank relevance, support fuzzy/typo-
+   tolerant queries.
+
+search-api is being built this same wave (FS-91x) as the platform's
+dedicated full-text discovery service. Building a second search engine
+inside marketplace-api would duplicate that investment, diverge in
+ranking behavior from every other searchable surface on the platform,
+and leave two places that need to learn the same lesson about
+tokenizing legal terminology.
+
+## Decision
+
+`GET /public/listings` filters `Listing`/`Profile` rows directly against
+this service's own Postgres — exact-match on registry keys for
+specialty and service kind, and exact list membership on jurisdiction strings
+(`store.py`'s `discover_listings`). This is enough for the marketplace
+to function today: a small, curated set of family-law listings, filtered
+by a small, curated vocabulary (`registry_seed.json`).
+
+Full-text discovery — ranked relevance, typo tolerance, searching
+biography prose — is explicitly out of scope for marketplace-api. The
+seam is named, not built: once search-api exposes an index/query door,
+marketplace-api's discovery door becomes a thin proxy (or search-api
+indexes marketplace-api's listings directly, the same way it will index
+every other searchable surface). Which shape that takes is search-api's
+call to make when it's ready, not marketplace-api's to pre-decide now.
+
+## Consequences
+
+Discovery is functionally complete for a small marketplace today, but
+does not scale to substring-searching thousands of biographies or
+ranking by relevance — that ceiling is deliberate, not accidental. When
+search-api's discovery door exists, `store.discover_listings` is the
+one place that changes; the public HTTP contract (`GET /public/listings`
+with `specialty`/`jurisdiction`/`service_kind` query params) does not
+need to change for callers.
+

@@ -1,0 +1,25 @@
+---
+title: "Modules are versioned, immutable content"
+description: "Ruled 2026-08-30 as part of the FS-915 build, the same pattern packs-api uses for a Pack (packs-api ADR 0001). A module version, once published, is never…"
+---
+
+Ruled 2026-08-30 as part of the FS-915 build, the same pattern packs-api
+uses for a `Pack` (packs-api ADR 0001). A module version, once published,
+is never updated or deleted. Publishing a new version is the only write
+door this service exposes for module content — there is no edit endpoint
+and no delete endpoint, on purpose. An assignment that pins a module
+version (ADR 0003) can trust it will read the same lesson list forever;
+anything that wants a content change publishes a new version and adopts
+it at its own pace, by reading `current` again or by pinning a version
+number.
+
+The next version number is assigned by the store, not the caller
+(`Store.publish_module` in `store.py`): two publishers racing for the
+same `module_key` both compute the same next version, and the unique
+`(module_key, version)` constraint makes the loser retry instead of
+forking the sequence.
+
+Module content also carries no `X-Workspace-Id` header and no workspace
+column, for the same reason packs' content does not: it is shared
+platform content, not per-workspace data.
+

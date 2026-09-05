@@ -1,0 +1,397 @@
+{
+  "components": {
+    "schemas": {
+      "BulkIn": {
+        "properties": {
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/FactIn"
+            },
+            "title": "Facts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "facts"
+        ],
+        "title": "BulkIn",
+        "type": "object"
+      },
+      "FactIn": {
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "attachment_of",
+              "same_thread",
+              "annotated_by",
+              "flagged_by_finding",
+              "derived_from",
+              "mentions_same_party",
+              "belongs_to",
+              "mentions"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "object_id": {
+            "title": "Object Id",
+            "type": "string"
+          },
+          "object_type": {
+            "enum": [
+              "record",
+              "file",
+              "finding",
+              "note",
+              "party",
+              "package",
+              "import_session"
+            ],
+            "title": "Object Type",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_type": {
+            "enum": [
+              "record",
+              "file",
+              "finding",
+              "note",
+              "party",
+              "package",
+              "import_session"
+            ],
+            "title": "Subject Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "subject_type",
+          "subject_id",
+          "kind",
+          "object_type",
+          "object_id"
+        ],
+        "title": "FactIn",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "relations-api",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/internal/bulk": {
+      "post": {
+        "operationId": "bulk_load_internal_bulk_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Workspace-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Bulk Load Internal Bulk Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Load"
+      }
+    },
+    "/internal/neighborhood/{reference_type}/{reference_id}": {
+      "get": {
+        "operationId": "neighborhood_internal_neighborhood__reference_type___reference_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "record",
+                "file",
+                "finding",
+                "note",
+                "party",
+                "package",
+                "import_session"
+              ],
+              "title": "Reference Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "title": "Reference Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "case_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Case Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Workspace-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Neighborhood Internal Neighborhood  Reference Type   Reference Id  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Neighborhood"
+      }
+    },
+    "/internal/two-hop/{reference_type}/{reference_id}": {
+      "get": {
+        "operationId": "two_hop_internal_two_hop__reference_type___reference_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "record",
+                "file",
+                "finding",
+                "note",
+                "party",
+                "package",
+                "import_session"
+              ],
+              "title": "Reference Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "title": "Reference Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "case_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Case Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Workspace-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Two Hop Internal Two Hop  Reference Type   Reference Id  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Two Hop"
+      }
+    }
+  }
+}

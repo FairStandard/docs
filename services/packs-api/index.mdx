@@ -1,0 +1,82 @@
+---
+title: "packs-api"
+sidebarTitle: "Overview"
+description: "The FairStandard packs service: versioned, immutable practice-area configuration (ADR 0001), served by a small, deep HTTP surface. See CONTEXT.md for the…"
+---
+
+The FairStandard packs service: versioned, immutable practice-area
+configuration (ADR 0001), served by a small, deep HTTP surface. See
+`CONTEXT.md` for the domain glossary and `docs/adr/` for the decisions
+this service is built on.
+
+## Architecture
+
+No workspace scoping — pack content is shared platform configuration, not
+per-workspace data (ADR 0002, `CONTEXT.md`). Every firm on the platform
+reads the same current family-law pack.
+
+Two tables (`models.py`): the `PracticeArea` registry — the source of
+truth for what practice areas exist (ADR 0003) — and `Pack`: a practice
+area key, a server-assigned version number, and a `sections` JSON object
+holding the content itself (lifecycle phase labels, the `legal_domain`
+structure, ...). New kinds of content are new JSON keys, not new columns
+— practice areas are data, never a hardcoded enum (ADR 0002). Finding
+types and document categories are NOT pack content (ADR 0003): those
+vocabularies belong to the services that detect them.
+
+## HTTP surface
+
+Internal only:
+
+- `POST /internal/practice-areas/{key}` — register a practice area
+  (idempotent); publishing requires it (ADR 0003).
+- `GET /internal/practice-areas/{key}` — one registered practice area.
+- `POST /internal/practice-areas/{key}/packs` — publish a new version.
+  Body: `{"sections": {...}}`. The store assigns the version number
+  (current max + 1); the response is the full pack, including its
+  assigned version. Publishing under an unregistered key is a 422.
+- `GET /internal/practice-areas/{key}/packs/current` — the highest
+  published version for a practice area. `404` if none exists.
+- `GET /internal/practice-areas/{key}/packs/{version}` — one specific,
+  immutable version. `404` if that version was never published.
+- `GET /internal/practice-areas` — every registered practice area key
+  (registration, not publication, is what makes one exist — ADR 0003).
+- `GET /health`
+
+There is no update or delete door. A pack version, once published, never
+changes (ADR 0001).
+
+## Seed content
+
+`seed/family-law.json` is the first pack: family law's lifecycle labels
+(Intake → Discovery → Mediation → Trial, the ruled instance per platform
+DESIGN.md section 6) plus the `legal_domain` structure — 9 areas of
+practice, 9 causes of action, and 25 order/provision types, where an
+entry may carry `status` ("active", or "reserved" for a type named by
+the engine's dispatch with no working evaluator yet) and a `category`.
+`seed.py` loads it; `tests/test_seed.py` publishes it through the store
+to prove the committed file is real, publishable content, not just an
+example.
+
+## Setup
+
+```
+uv sync --dev
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+Tests spin up a real `postgres:18` container via testcontainers — Docker
+must be running locally and in CI.
+
+## Migrations
+
+Schema changes go through Alembic:
+
+```
+uv run alembic revision --autogenerate -m "message"
+uv run alembic upgrade head
+```
+

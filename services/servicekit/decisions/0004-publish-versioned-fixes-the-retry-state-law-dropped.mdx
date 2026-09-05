@@ -1,0 +1,41 @@
+---
+title: "publish_versioned fixes the retry state-law-api dropped"
+description: "Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949), following the estate review that read every store implementing the insert-only,…"
+---
+
+Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949),
+following the estate review that read every store implementing the
+insert-only, never-updated version row pattern (packs-api ADR 0001,
+learning-api's `Module`).
+
+`packs-api/store.py` and `learning-api/store.py` both wrap their
+`max(version) + 1`-then-insert publish door in the same bounded retry:
+catch `IntegrityError` from the unique `(key, version)` constraint, try
+again, up to five attempts. `state-law-api/store.py` copied the max+1-
+then-insert shape onto all four of its publish doors (deadline rules,
+court rules, process definitions, pro-bono eligibility) — and dropped the
+retry loop entirely. Two publishers racing for the same
+`(jurisdiction, practice_area)` there today do not both land; the loser's
+`IntegrityError` propagates raw.
+
+`publish_versioned(publish_once, attempts=5, retry_on=None)` is the fix,
+extracted once instead of re-copied a fifth time. It owns only the
+bounded retry — `publish_once` still owns the whole read-max-then-insert
+unit of work, session included — so it stays useful to a caller with a
+different ORM or no ORM at all. `retry_on` defaults to sqlalchemy's
+`IntegrityError`, lazily imported: `servicekit` does not gain a hard
+sqlalchemy dependency from this module (`sqlalchemy` stays an optional
+extra, mirroring `fastapi`) — a caller with a different retryable
+exception, or no sqlalchemy installed, passes `retry_on` explicitly.
+
+Proven against real contention, not a mock:
+`tests/test_versioning.py::test_two_concurrent_publishers_both_land_distinct_versions`
+runs two publishers concurrently against a real Postgres unique
+constraint (testcontainers) and asserts both versions 1 and 2 land — the
+exact scenario state-law-api's publish doors fail today.
+
+Deletion test: the same test above, plus
+`test_retry_budget_exhausted_raises_version_contention` — if the retry
+loop were removed, the concurrent test would flake or raise
+`IntegrityError` directly instead of both publishers succeeding.
+

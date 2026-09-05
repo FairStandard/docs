@@ -1,0 +1,34 @@
+---
+title: "fastapi is optional; the header deps are not hard-wired"
+description: "Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949)."
+---
+
+Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949).
+
+`case-api/main.py` and `notifications-api/main.py` both define
+`WorkspaceId = Annotated[str, Header(alias="X-Workspace-Id")]` verbatim;
+`notifications-api/main.py` also defines `CallerId` for
+`X-Caller-Id` (messaging-api's convention: a recipient reads and mutates
+only their own notifications). `servicekit.fastapi` is that one
+definition, shared.
+
+servicekit's core dependencies stay `httpx` and `redis` — a service with
+no FastAPI surface (a worker, a batch job) must not gain a FastAPI
+dependency by installing servicekit. `fastapi` lives only in
+`[project.optional-dependencies]` (the `servicekit[fastapi]` extra,
+current uv/PEP 621 practice — verified against uv's own dependency docs
+during this build, not assumed from memory), and `servicekit/__init__.py`
+never imports `servicekit.fastapi`. A service that wants the header deps
+imports the submodule explicitly:
+`from servicekit.fastapi import WorkspaceId, CallerId`.
+
+`tests/test_no_hard_dependency.py` is the proof, not just a claim: it
+reads `pyproject.toml` to assert fastapi and sqlalchemy are absent from
+`[project.dependencies]`, and it clears `sys.modules` and re-imports
+`servicekit` to assert `servicekit.fastapi` was never pulled in as a side
+effect.
+
+Deletion test: `tests/test_no_hard_dependency.py::test_importing_servicekit_does_not_import_the_fastapi_submodule`
+— if `__init__.py` ever re-exported something from `servicekit.fastapi`,
+this test fails.
+

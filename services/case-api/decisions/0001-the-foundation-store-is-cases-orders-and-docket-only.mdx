@@ -1,0 +1,47 @@
+---
+title: "1. The foundation store is cases, orders, and docket only"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Wave 1 (FS-857) carves case-api out of the platform as its own service with
+its own Postgres. The map ruled six services, each owning one slice.
+Adjacent slices are explicitly out of scope for this land: case-team
+records belong to IDENTITY (ruled 2026-08-30 — case-api must never create
+case-team tables), deadlines get their own service later, and
+cooperation/violations plus discovery tracking are later slices on this
+same repo.
+
+## Decision
+
+This slice ships four tables and nothing else:
+
+- `Case` — caption, case number, court, phase.
+- `CaseParty` — the caption parties (petitioner/respondent and similar),
+  scoped to a case. This is deliberately not the same thing as a
+  case-team record (who is working the case, which org, which role) —
+  those stay in IDENTITY. A caption party is a fact about the matter
+  itself, not about who represents anyone.
+- `CourtOrder` — one order, its status, and free-text notes.
+- `DocketEntry` — the event register: filings, hearings, service, with a
+  result and notes.
+
+Every table carries `workspace_id`, and every store method takes it as the
+first argument and filters on it — a row from another workspace does not
+exist as far as the query is concerned, not just as far as the response
+is concerned.
+
+## Consequences
+
+Building deadlines, cooperation, or discovery tracking later means adding
+new tables and routes to this same service, not touching these four. If
+IDENTITY's case-team model changes shape, case-api's tables are
+unaffected — they hold no team data to begin with.
+

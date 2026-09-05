@@ -1,0 +1,37 @@
+---
+title: "3. Shared content, not workspace-scoped"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Every other sliced service so far (relations-api, files-api) either
+scopes reads by `X-Workspace-Id` or is stateless per-request computation.
+Statute law is neither: a Texas Family Code section is the same text for
+every workspace reading Texas cases. Attaching a workspace id to it would
+be wrong twice over — it would force one copy of public law per
+workspace, and it would imply a workspace could see a "different"
+version of a statute than another workspace, which is never true.
+
+## Decision
+
+State-law-api's doors carry no `X-Workspace-Id` header and no
+workspace-scoping column, matching files-api's precedent for content
+that isn't caller-owned data. Access is scoped by jurisdiction only —
+the one dimension that actually varies. Any workspace-level question
+("can this workspace's plan read court-rules content yet") is an
+entitlement decision that belongs to the caller, not to this service.
+
+## Consequences
+
+Reads are cacheable and shareable across workspaces without any
+per-tenant duplication. Callers that need to gate access by plan or
+entitlement do that gating themselves before or after calling this
+service; this service stays a pure content store.
+

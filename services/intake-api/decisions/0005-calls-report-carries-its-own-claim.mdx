@@ -1,0 +1,44 @@
+---
+title: "5. The calls report carries the document's own claim"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The platform's original calls-report parser read the document's "Contains:
+N calls" line, logged it, and threw it away. The report it returned set
+`total_calls` to the number of calls it managed to extract. Any check
+comparing "claimed vs extracted" on that report compares the extraction
+against itself, so a dropped call could never be caught. The original
+processor also read report keys the parser never produced (`generated_at`,
+`page_count`, `parse_errors`), so the saved report always had a blank
+generated date, zero pages, and silently discarded per-call failures.
+
+## Decision
+
+Deliberate deviations from the verbatim port, all additive:
+
+- The parse report includes `claimed_calls` — the count the document
+  states about itself — and `parse_errors`, the per-call failures.
+- Validation itself reads `claimed_*` keys first, so any parser that
+  provides the document's own claim gets dropped-item detection for free —
+  the processor keeps both counts and overrides nothing. A test proves a
+  dropped call now fails validation.
+- The processor maps from the keys the parser actually returns.
+
+The parse function's original fields stay byte-identical to the platform
+output (golden parity pins them).
+
+## Consequences
+
+A calls report that silently loses a call escalates to the AI extraction
+tier instead of shipping short. The frozen golden stays faithful to the
+original parser; the deviations live in additive keys and the processor
+layer, so parity and the fix coexist.
+

@@ -1,0 +1,48 @@
+---
+title: "1. Status is lifecycle; recommendations are computed"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (cap-filing.yaml, cap-court-prep.yaml) rules that filings-api
+guides a user through drafting, recommends what to file next, and tracks
+service — several different ideas that are easy to conflate into one
+mutable blob on the row. Deadlines-api already worked through the same
+tension for its own two axes (status vs. urgency, ADR 0001) — that
+reasoning transfers directly.
+
+## Decision
+
+`Filing.status` is the only lifecycle field, and it is a plain string —
+`draft`, `in-review`, `filed`, `served`, and so on — never an enum,
+matching every other extensible-registry field on the platform. It
+changes only when a human (or a future automation) acts.
+
+The guided-pass state (`current_pass`, `pass_blocks`) is separate data on
+the row: which pass a filing is currently in, and which blocks of that
+pass are complete. Filings-api stores this state; it does not own pass
+definitions or prompt content — those are trade secret, server-side only,
+and never echoed into a client-facing response body.
+
+Recommendations are never stored. `store.recommend_next` recomputes them
+on every call from case facts, docket, existing filings on the case, and
+practice content — the same "never store what goes stale" reasoning as
+deadlines-api's urgency. A new docket event or a newly-filed sibling
+filing changes what should be recommended without any write to a
+recommendations table.
+
+## Consequences
+
+Every recommendation call costs a live read of case-api and packs-api;
+there is no cached/stale fallback in this slice. If that becomes a
+latency problem, caching is a later decision — not backfilled from this
+ADR. Guided-pass block/prompt content itself (what a given pass asks for)
+is out of scope for this wave; only the state shape ships.
+

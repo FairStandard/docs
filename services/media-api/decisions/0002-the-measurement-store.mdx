@@ -1,0 +1,37 @@
+---
+title: "2. The measurement store"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Emotion measurements and voice embeddings live today in a shared
+analytics database that the web app queries directly with shared
+credentials. Christopher ruled 2026-08-30: that data moves too — it
+cannot stay a shared read surface.
+
+## Decision
+
+media-api owns a FRESH analytics database (columnar, ClickHouse-class)
+for measurements — and, once the diarization stage that produces them
+is built, voice embeddings (none are stored yet) — its second store
+beside its Postgres bookkeeping. Nothing else connects to it: every read goes through
+media-api's API. It starts as a managed instance in the cloud region the
+platform is heading toward; moving it onto the platform's own
+infrastructure later is an operations task, not a redesign. The old
+shared database is retired with the monolith, its data migrated once
+through this service's own writer.
+
+## Consequences
+
+Measurement volume (which grows with every second of audio) scales on a
+database built for sweeps and aggregations, and the coupling where the
+web app read analytics directly dies with the carve. The cost is one
+more store to run — owned by exactly one service.
+

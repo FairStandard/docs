@@ -1,0 +1,63 @@
+---
+title: "Domain model"
+description: "One producer's assertion, published onto this service's own stream: \"this entity exists, here is what it looks like to search\" — workspace, entity kind,…"
+---
+
+**IndexFact**:
+One producer's assertion, published onto this service's own stream:
+"this entity exists, here is what it looks like to search" — workspace,
+entity kind, entity id, title, body, facets, visibility. Re-publishing
+the same (workspace, entity) upserts; the index always reflects the
+latest fact, never a history.
+_Avoid_: event (bare), document (that's the stored row, not the message)
+
+**Entity kind**:
+A plain registry string a producer owns ("record", "message", "listing",
+"course", ...) — never an enum this service maintains. Search must not
+be recompiled every time another service invents a new kind of thing it
+wants searchable.
+_Avoid_: entity type (kind is the field name), category
+
+**Document**:
+One row in this service's own index — the durable, queryable result of
+upserting an IndexFact. What a search actually returns.
+_Avoid_: record (relations-api owns that word for a different thing),
+entry
+
+**Redaction / delete-by-entity**:
+The door that removes a document outright, scoped to one workspace. A
+real DELETE, never a soft mark — a redacted document must not resurface
+in any later query (ADR 0003).
+_Avoid_: purge, archive (implies recoverable)
+
+**Workspace scoping**:
+The property the whole design rests on: no search result, ever, crosses
+a workspace. Every write and every read takes workspace_id as a
+required, non-optional first argument — there is no code path that can
+build a query or a delete without it.
+_Avoid_: tenant, org
+
+**Leaf service**:
+search-api reads only its own index and its own event stream. It never
+calls another service and never reaches into another service's
+database — every fact it knows arrived as an IndexFact (ADR 0002).
+_Avoid_: hub, aggregator
+
+## Doors
+
+- `GET /internal/search` — full-text + facet filters + pagination,
+  workspace-scoped by `X-Workspace-Id`.
+- `DELETE /internal/entity/{entity_kind}/{entity_id}` — redaction,
+  workspace-scoped, actually removes the row.
+
+## What feeds the index
+
+The indexer consumes `IndexFact` records off a servicekit `StreamQueue`
+(Redis Streams) and upserts them into the `document` table. Deletion is
+NOT part of the stream — it's a synchronous HTTP door, so a redaction
+request gets an honest, immediate answer about whether the row was
+actually removed, not an eventually-consistent "probably."
+
+See `docs/adr/` for the index technology choice, the leaf/event-fed
+architecture, and the hard-delete decision.
+

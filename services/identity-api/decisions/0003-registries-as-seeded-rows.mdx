@@ -1,0 +1,30 @@
+---
+title: "The registries: seeded rows, extension is an insert"
+description: "Ruled 2026-08-30. OrgRole and CaseRelationship are ordinary tables — one unique name column each — not Python enums and not CHECK constraints on the tables…"
+---
+
+Ruled 2026-08-30. `OrgRole` and `CaseRelationship` are ordinary tables —
+one unique `name` column each — not Python enums and not `CHECK`
+constraints on the tables that reference them.
+
+- **Seeding** happens through `store.ensure_seeds()`, called once from
+  `main.py`'s lifespan (and from the test `engine` fixture, so tests see
+  the same seed rows as the running service). Seeding is idempotent: it
+  inserts the four org roles (owner, attorney, staff, provider) and the
+  four case relationships (representing_professional, represented_party,
+  self_represented_party, external_participant) with
+  `on_conflict_do_nothing` on the name unique constraint, so calling it
+  twice is a no-op the second time.
+- **Validation reads the table, not a constant.** `Membership.org_role`
+  and `CaseTeamMember.case_relationship` are plain `str` columns. Before
+  writing either, the store queries the matching registry table for that
+  name and raises a 422 if it isn't there. This is the whole point of the
+  registry: a value that's invalid today becomes valid the moment
+  `POST /internal/registries/{name}` inserts it — no deploy, no code
+  change. A cached Python set of "valid values" would defeat this and is
+  not used anywhere in this service.
+- **Reading a registry** (`GET /internal/registries/{name}`) returns the
+  current rows as data. There is no registry of registries; `{name}` is
+  matched against the known table names (`org_role`, `case_relationship`)
+  and anything else 404s.
+

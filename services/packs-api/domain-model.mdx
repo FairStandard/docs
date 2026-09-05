@@ -1,0 +1,72 @@
+---
+title: "Domain model"
+description: "The packs context holds practice-area configuration: the content that makes the platform's screens, taxonomies, and labels different for family law than for…"
+---
+
+The packs context holds practice-area configuration: the content that
+makes the platform's screens, taxonomies, and labels different for family
+law than for any other practice area, without any of that difference
+being written into application code (platform DESIGN.md section 8).
+
+## Language
+
+**Pack**:
+One published version of one practice area's configuration. Immutable
+once published — a pack is never edited, only superseded by a new
+version.
+_Avoid_: config, settings (too generic — this is content, not app config)
+
+**Practice area**:
+A string key (`family-law`, `estate-planning`, ...) that packs are
+published under. A practice area exists when it is registered in the
+practice-area registry (ADR 0003) — registration comes first, publishing
+requires it. Still data, never a hardcoded enum.
+_Avoid_: vertical, tenant
+
+**Section**:
+One named slice of a pack's content (`lifecycle_phases`,
+`legal_domain`, ...). New section kinds are added by publishing content
+with a new key, never by changing this service's schema — that is what
+"extensible data, not enums" means here. `legal_domain` is the
+documented, publish-validated section for a practice area's legal-domain
+structure (areas of practice, causes of action, order/provision types) —
+see ADR 0003. `finding_types` and `document_categories` were removed
+2026-08-31 (ADR 0003): they were placeholder content with no ruled
+source and no live consumer — those vocabularies belong to the services
+that detect/label them (analysis-api, intake-api/files-api), not to a
+pack.
+_Avoid_: field, column (sections are content, not schema)
+
+**Practice-area registry**:
+The `PracticeArea` table — the source of truth for "what practice areas
+exist," registered via `POST /internal/practice-areas/{key}` before any
+pack can publish under that key (`store.publish` rejects an
+unregistered key with a `422`). Added 2026-08-31 (ADR 0003) to close a
+drift risk: before this, `packs-api`, `state-law-api`, and `learning-api`
+each accepted an unvalidated `practice_area` string with no shared
+source of truth. Other services validate their own `practice_area`
+fields against this registry through their own `PacksReader`-style seam
+(see `state-law-api`'s and `learning-api`'s own CONTEXT.md/ADRs).
+_Avoid_: PracticeArea enum (it is a registry table, not a closed set)
+
+**Version**:
+A pack's position in its practice area's publish sequence, assigned by
+the store starting at 1. Reading a version number always returns the
+same content, forever.
+_Avoid_: revision, release
+
+**Current**:
+The highest version published for a practice area. What most readers
+want; a caller that needs stability instead pins a specific version
+number.
+_Avoid_: latest (ambiguous with "most recently touched" elsewhere on the
+platform; "current" names the version-sequence position specifically)
+
+## Not workspace-scoped
+
+Pack content is shared platform configuration, not per-workspace data.
+There is no workspace column on `Pack` and no `X-Workspace-Id` header on
+any door this service exposes — every firm on the platform using the
+family-law practice area reads the same family-law pack. See
+`main.py`'s module docstring and ADR 0002.
+

@@ -1,0 +1,43 @@
+---
+title: "3. Redaction is a hard delete, never a soft mark"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Attorney workspaces need to redact documents from search — a document
+that has been deleted, privileged, or otherwise pulled must genuinely
+stop being findable. A soft-delete flag (`is_deleted = true`, filtered
+out of queries) leaves the text sitting in the BM25 index and the table,
+one bug or forgotten filter away from resurfacing.
+
+## Decision
+
+`delete_entity` issues a real `DELETE FROM document ...`, scoped to the
+requesting workspace so a caller can never remove another workspace's
+row even by guessing an entity id. Because the BM25 index is a genuine
+Postgres index access method, the row disappears from both the table and
+the index in the same statement — there is no separate "flush the
+search index" step to forget. The delete door is synchronous HTTP, not
+part of the IndexFact stream, so a redaction request gets an immediate,
+honest answer (row removed / not found) instead of an eventually-
+consistent "probably."
+
+Tested directly: `test_delete_by_entity_removes_it_from_query_results`
+and `test_delete_by_entity_in_wrong_workspace_is_not_found` prove the
+document is gone from query results after delete, and that a delete
+request naming the wrong workspace 404s instead of deleting.
+
+## Consequences
+
+Redaction is unrecoverable by design — there is no "undo" for this
+door, matching what "redaction" means legally. The tradeoff is
+deliberate: a soft-delete would be recoverable but would carry the
+ongoing risk of a filter bug making a redacted document searchable again.
+

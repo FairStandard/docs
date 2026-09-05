@@ -1,0 +1,65 @@
+---
+title: "4. IdentityReader is shaped around identity-api's real /internal/verify door"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Grant issue and revoke are org-scoped: the acting bearer token must
+belong to a live member of the org paying for (or flagging) the grant.
+That check needs org/membership facts from identity-api. Reading
+`identity-api/main.py`, the only doors it actually serves are
+`/internal/register`, `/internal/login`, `/internal/logout`,
+`/internal/verify`, `/internal/organizations` (+ members, POST/DELETE
+only), `/internal/case-team`, and `/internal/registries/{name}`. There
+is no `GET /internal/organizations/{id}` and no
+`GET /internal/organizations/{id}/members` — a Protocol shaped around
+"fetch org by id" or "look up membership by org_id + user_id" would have
+no real door to call, the same trap ADR 0003 avoided for the pro-bono
+flag.
+
+`GET /internal/verify` does exist and already returns exactly what's
+needed: given a bearer token, the caller's `user` plus their live
+`memberships` (`org_id`, `org_role`) — the same shape any other service
+uses to authenticate an in-flight request against identity-api's session
+store (ADR 0002 in identity-api's own docs).
+
+## Decision
+
+`IdentityReader` (identity_reader.py) is a `Protocol` with one method:
+`verify(token: str) -> VerifiedIdentity | None`, mirroring identity-api's
+real door exactly — no method this service can't actually call in
+production. `HttpIdentityReader` calls `GET /internal/verify` with the
+token as a Bearer header through servicekit's doorway contract
+(`call_with_retries`, `Rejected`, `Unavailable`), the same pattern
+deadlines-api's `HttpCaseReader` uses against case-api. A `401` maps to
+`None` (an invalid or revoked token), not an exception — the caller
+(`Store._require_member`) then raises `NotOrgMember`, surfaced by
+`main.py` as `403`. `FakeIdentityReader` keeps the same promise in
+memory for tests.
+
+`Store.issue_grant` and `Store.revoke_grant` both require an
+`actor_token`, call `_require_member(actor_token, org_id)`, and refuse
+(`NotOrgMember`) if the token doesn't verify as a member of the grant's
+org — org-scoped, per the task's requirement, using only a door
+identity-api actually serves.
+
+## Consequences
+
+**Update (FS-912, 2026-08-30):** role-gating landed. `_require_member`
+now checks the verified `org_role` against
+`settings.authorized_grant_roles` (default `{"owner", "admin"}`,
+configurable — see docs/adr/0003-*.md's addendum), refusing with
+`NotAuthorizedRole` when a live member's role isn't in that set. This
+used exactly the seam this ADR anticipated: no new identity-api door,
+no change to `IdentityReader`'s shape — `/internal/verify` already
+served `org_role` per membership, and `tests/test_identity_reader.py`'s
+`FakeIdentityReader`/`HttpIdentityReader` contract test against the same
+payload shape covered the seam without changes.
+

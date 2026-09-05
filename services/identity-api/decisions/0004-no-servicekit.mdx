@@ -1,0 +1,32 @@
+---
+title: "No servicekit dependency — a deliberate skip"
+description: "Ruled 2026-08-31 (recorded during the estate audit remediation; the skip itself dates from the scaffold and was never written down — that was the gap, not the…"
+---
+
+Ruled 2026-08-31 (recorded during the estate audit remediation; the skip
+itself dates from the scaffold and was never written down — that was the
+gap, not the decision).
+
+The estate standard is: pin servicekit at an exact rev where adopted, or
+document the skip. identity-api skips it, on three grounds:
+
+- **No queue.** This service consumes no stream and publishes none.
+  `StreamQueue` and its codecs have nothing to do here.
+- **No outbound calls.** identity-api calls no other service — it is the
+  one every other service calls (`/internal/verify`). The doorway
+  contract (`call_with_retries`, `Rejected`/`Unavailable`) exists for
+  callers; this service has no caller side.
+- **One header does not justify a dependency.** The single
+  `X-Workspace-Id` read on the case-team door is one `Header(alias=...)`
+  annotation. Pulling in `servicekit.fastapi` for that would add a
+  pinned git dependency to save one line.
+
+Revisit when any of the three change — the moment identity needs a
+stream, an outbound doorway, or grows a second workspace-scoped door,
+adoption stops being over-engineering and the pin rule applies as
+written.
+
+The CI workflow originally carried a `SERVICEKIT_TOKEN` git-access step
+copied from the estate scaffold; nothing in this repo's dependency graph
+needs it, and it was removed the day this ADR was written.
+

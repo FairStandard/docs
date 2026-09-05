@@ -1,0 +1,52 @@
+---
+title: "2. Kind and channel are registry strings; events arrive, this service"
+description: "never calls out to learn what one means"
+---
+
+never calls out to learn what one means
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Every service on the platform can produce a notification kind
+(`deadline.approaching`, `filing.accepted`, `message.received`, ...),
+and the set grows every time a producer adds a new one. If this
+service enforced a closed `Literal`/enum of kinds — the way
+relations-api's `RelationKind` closes its own vocabulary — every new
+kind anywhere in the platform would require a PR against this service
+first, making it a bottleneck for every other team's feature work.
+Channels have the same shape of problem: `in_app`, `email`, `push` now,
+more later.
+
+## Decision
+
+Kind and channel are plain strings this service treats as opaque
+registry values, not a closed vocabulary. The event codec
+(`queueing.py`) validates structure only — every field on
+`NotificationEvent` present and non-empty — never membership in a
+known-kinds set. A malformed event (missing fields) dead-letters from
+the decode itself, the same failure mode relations-api uses for a
+genuinely poison message; a well-formed event naming a kind this
+service has never seen before is not an error, it is the normal case
+of a producer shipping something new.
+
+Steady-state ingestion is a Redis stream this service owns
+(`notifications:events`) — any producer publishes directly via
+servicekit's `StreamQueue`, or through `POST /internal/publish` for a
+producer without stream access, which itself just writes to the same
+stream. This service never calls another service to enrich or validate
+an event; everything it needs is already on the event.
+
+## Consequences
+
+New notification kinds ship entirely inside the producing service —
+no coordination, no PR here. The cost is that this service cannot
+reject a kind it considers "wrong" the way relations-api rejects an
+unknown relation kind; that check, if ever needed, belongs to the
+producer, not the delivery layer.
+

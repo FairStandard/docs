@@ -1,0 +1,39 @@
+---
+title: "Doorway errors are a factory, not a copy-paste"
+description: "Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949), following the estate review that read every reader module talking to another service…"
+---
+
+Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949),
+following the estate review that read every reader module talking to
+another service through the doorway contract (`doorway.py`).
+
+Five readers — `intake-api/files_reader.py`, `intake-api/evidence.py`,
+`deadlines-api/case_reader.py`, `filings-api/case_reader.py`,
+`messaging-api/identity.py` — each hand-wrote the same ~30 lines: a local
+error base, a `Rejected` subclass carrying `status_code`/`detail`, an
+`Unavailable` subclass, and a `_call_doorway` helper that runs
+`call_with_retries` and translates the two doorway exceptions into the
+local pair. The shape was identical every time; only the local base class
+name differed.
+
+`doorway_errors(base=..., name=...)` builds that pair and the call helper
+in one call, returning a `DoorwayErrorKit`. Every error the kit raises is
+still an instance of the caller's own `base` — `except FilesReaderError`
+call sites keep working unchanged — and the kit's `.call()` passes a
+successful attempt's return value through untouched, including `None`,
+the shape `identity.py`'s `verify()` uses for "no such session" (not a
+failure to be caught).
+
+The kit's two classes are built with `type(...)` rather than a `class`
+statement, because `base` is a runtime value and no static checker can
+linearize a class whose bases include a type-erased parameter — even
+though the resulting MRO is always valid (both ancestors terminate at
+`Exception`; proven in `tests/test_doorway_errors.py`, and directly at the
+Python REPL during this build). The two `cast()` calls in `doorway_errors`
+tell the checker what the tests prove; they are not a suppression of a
+real type error, and pyrefly's zero-suppression gate treats them as such.
+
+Deletion test: `tests/test_doorway_errors.py::test_two_kits_produce_distinct_error_types`
+— if `doorway_errors` collapsed to a single shared error class instead of
+building a fresh one per call, this test fails.
+

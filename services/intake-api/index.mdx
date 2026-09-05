@@ -1,0 +1,81 @@
+---
+title: "intake-api"
+sidebarTitle: "Overview"
+description: "The FairStandard evidence intake service — the platform's front door for evidence. It hands out signed upload links, tracks import sessions, detects…"
+---
+
+The FairStandard evidence intake service — the platform's front door for
+evidence. It hands out signed upload links, tracks import sessions, detects
+duplicates, parses every supported file type (court documents, call reports,
+message exports, recordings, voice memos) into records, and delivers the
+results to the evidence store. Analysis work is handed to the other services
+over their APIs; nothing here writes another service's data.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+Configuration is environment-driven under the `INTAKE_` prefix
+(`settings.py`). Migrations are real alembic — `uv run alembic upgrade
+head` against the same `INTAKE_DATABASE_URL`; the chain (including the
+table-rename migration's raw DDL) is exercised both directions by
+`tests/test_migrations.py`.
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push and
+pull request.
+
+## Architecture
+
+Every import flows through the ingest engine (`engine.py`), the one
+front door (ADR 0006): fingerprint → register (already-delivered
+duplicates stop; failed re-uploads retry) → classify meaning → extract →
+validate (ADR 0004: failures escalate to the AI extraction tier;
+still-invalid imports are flagged, never delivered silently) → resolve
+parties against the case's known people → deliver to the evidence store →
+audit.
+
+- `classification.py` — what a file MEANS (rule-based; ported with
+  golden parity from the platform's classifier). Imports format
+  detection (`detect_format`) straight from the pinned `files-api`
+  package (ADR 0008 addendum) — `classify()` stays synchronous, no
+  network hop.
+- `escalation.py` / `extraction.py` — the AI extraction tier (model
+  reasoning stays here, never in files-api). Its self-validation rule
+  and the identity-hash formulas escalation needs to build a
+  `content_hash` are also imported from the pinned `files-api` package
+  (ADR 0008 addendum), not hand-synced copies.
+- `files_reader.py` — the doorway to files-api (FS-887), which owns
+  byte-level format detection and the deterministic parser fleet (call
+  history CSV, OFW messages and calls reports, iMessage export).
+- `parties.py` — cross-references extracted names/numbers/handles to
+  the case's known parties.
+- `store.py` / `models.py` — import-session bookkeeping on the
+  service's own Postgres.
+- `evidence.py` — the doorway to the evidence store.
+- `main.py` — the internal HTTP surface: import sessions, engine-backed
+  file ingestion, listings, presigned direct uploads. Workspace-scoped
+  by the X-Workspace-Id header.
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Status
+
+The service takes a file end to end: upload → classify → extract →
+validate/escalate → resolve parties → deliver → audit. Still ahead:
+court-document and audio/RSMF processors (additive plug-ins), the AI
+meaning-classification tier and image/video extraction tiers behind the
+existing seams, and the private job queue.
+

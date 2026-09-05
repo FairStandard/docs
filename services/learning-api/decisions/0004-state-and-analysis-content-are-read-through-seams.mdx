@@ -1,0 +1,57 @@
+---
+title: "State-law content and analysis findings are read through reader seams"
+description: "Ruled 2026-08-30. Two module capabilities depend on another service's content, and neither is met by copying that content into this service's own storage:"
+---
+
+Ruled 2026-08-30. Two module capabilities depend on another service's
+content, and neither is met by copying that content into this service's
+own storage:
+
+- A state process guide lesson references a statute by
+  `{jurisdiction, citation}`, resolved through `state_law_reader.py`
+  against state-law-api's real door
+  (`GET /v1/statutes/{jurisdiction}/{citation}`) at render time, not
+  pasted statute text authored into the seed file. When the underlying
+  law changes, the guide's reference resolves to the new text without
+  this service's content being touched.
+- The suggestion engine reads a case's finding types through
+  `analysis_reader.py` against analysis-api's real door
+  (`GET /cases/{case_id}/findings`), never from a copy or a cache this
+  service owns.
+
+Both seams follow the pattern deadlines-api's `state_law_reader.py`
+established for state-law-api: a `Protocol` the application code depends
+on, an `Http...Reader` that speaks the real HTTP surface through
+servicekit's doorway contract (`Rejected` / `Unavailable` /
+`call_with_retries`), and a `Fake...Reader` that keeps the same promise
+in memory for tests. Both readers are contract-tested against each other
+(`tests/test_state_law_reader.py`, `tests/test_analysis_reader.py`) so a
+fake test double and the real HTTP path can never silently diverge.
+
+An unpublished citation is an honest empty (state-law-api answers 404;
+`get_statute` returns `None`), the same doctrine deadlines-api applies to
+an unpublished rule set — a guide referencing content nobody has loaded
+yet renders without that piece, it does not error. A case with no
+findings yet is likewise an honest empty list from `get_finding_types`,
+not a failure.
+
+## Addendum, 2026-08-31: practice_area_key validated through the same
+## seam pattern
+
+Part of the pack-model correction
+(`scratch_pads/pack-seam-research.md`, `pack-seam-architecture.md`). A
+third reader joins the two above: `packs_reader.py`, the same
+Protocol/Http/Fake shape, against packs-api's practice-area registry
+(`GET /internal/practice-areas/{key}`). `Module.publish_module` now
+rejects a `practice_area_key` packs-api has never registered
+(`UnknownPracticeAreaError`, surfaced as a `422`) instead of accepting
+any string — this closes the drift risk named in
+`pack-seam-architecture.md` section 4: learning-api independently
+carried `practice_area_key` on `Module` with no cross-check against
+packs-api or state-law-api. `Module.jurisdiction` and
+`addresses_finding_types` are intentionally NOT validated by this
+change — jurisdiction validation and a finding-type registry check are
+future work once analysis-api's own registry exists (out of scope for
+this ADR's correction; do not add either without a separate ruling).
+No schema change — `practice_area_key` stays the same `str` column.
+

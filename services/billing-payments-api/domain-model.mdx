@@ -1,0 +1,144 @@
+---
+title: "Domain model"
+description: "A bill: lines, a currency, a total in integer cents, and a status (draft, sent, paid, void) that lives as plain data, not a database enum. kind (registry:…"
+---
+
+**Invoice**:
+A bill: lines, a currency, a total in integer cents, and a status
+(draft, sent, paid, void) that lives as plain data, not a database
+enum. `kind` (registry: "client" | "platform") says who owes it — a
+client-facing bill for legal work (`case_id` + `client_reference_id`
+set), or a platform subscription charge the workspace itself owes
+(`subscription_id` set, no case or client behind it). One table for
+both — see ADR 0005 for why. There is no delete door — an invoice that
+should stop being live is voided instead, with a reason. Only
+`Store.run_billing_cycle` ever creates a platform invoice; the public
+`POST /invoices` door only ever creates a client one.
+_Avoid_: bill (invoice is the field name everywhere), charge (this
+service records payments, it never charges anything)
+
+**Subscription**:
+What a workspace pays FairStandard for on a recurring basis — a
+platform pricing tier or a marketplace listing's activation fee
+(`kind`, registry string). `subscribed_ref` names the specific thing
+subscribed to and is the lookup key marketplace-api's `BillingReader`
+seam asks for. The billing period is data (`period_unit` +
+`period_interval`), not hardcoded logic. `status` (registry: active |
+past-due | canceled) moves as `Store.run_billing_cycle` runs; a
+subscription goes past-due when the platform invoice from its last
+cycle is still unpaid at the next one.
+_Avoid_: plan (the word for the priced thing lives in whatever owns
+platform-tier definitions, not here — this table only records that a
+workspace pays for one)
+
+**Billing-cycle runner**:
+`Store.run_billing_cycle(*, now: datetime)` — a deterministic function,
+not a scheduler. Given an instant, it finds subscriptions whose period
+has ended, generates a platform invoice for each and advances the
+period by exactly one length, or moves a subscription to past-due if
+its prior invoice is unpaid. `POST /billing-cycle/run` is the door an
+external cron calls; nothing in this service runs its own scheduler.
+
+**InvoiceLine**:
+One item on an invoice — a description, a quantity, a unit amount, and
+the computed amount. A line built from recorded time carries
+`time_entry_id`, the link that eventually moves that TimeEntry to
+status "invoiced".
+_Avoid_: item (too generic for a field name shared across services)
+
+**RetainerAccount**:
+One client's trust account for one case — the container the trust
+ledger's entries belong to. Opening one does not fund it; funding is a
+separate, explicit door.
+_Avoid_: trust account (the trust *ledger* is the entries; the account
+is the container)
+
+**LedgerEntry**:
+One append-only movement in a retainer's trust ledger: fund (money in),
+draw (money out, e.g. paying an invoice), or reversal (a correction of
+a prior entry, never an edit of it). Every entry is sourced — it names
+what caused it (a payment, an invoice, a manual adjustment) — and
+carries a signed cents amount so the balance is always just a sum.
+_Avoid_: transaction (this is trust accounting, not a database
+transaction, though one ledger write does happen inside one), balance
+(the balance is never stored — see below)
+
+**Balance**:
+Never a column. Always `SUM(signed_cents)` over one retainer account's
+`LedgerEntry` rows, computed on read. If a stored balance and the entry
+history ever disagreed, the entries would be right and the stored value
+would be a bug — so there is no stored value to disagree.
+_Avoid_: running total (implies something incrementally maintained and
+stored — it isn't)
+
+**TimeEntry**:
+One block of time, billable or not, tied to a case: how long, what kind
+of work, which service observed it, and whether a person or the ambient
+capture system produced it (`capture_provenance`). Its `status` moves
+captured -> submitted -> approved -> locked -> invoiced (void is a
+reserved off-ramp at any point before invoiced — registry vocabulary
+today, no door writes it yet). Approval records provenance
+(`approved_by`, `approved_at`); locking (`locked_at`) makes the row
+immutable — see **Correction** below. Invoicing may only consume an
+entry that is approved or locked (ADR 0006); consuming one flips it to
+invoiced.
+_Avoid_: timer (the TopBar timer is one *source* of manual entries, not
+what this model represents), billable hours (the unit here is seconds,
+not a display format)
+
+**Correction** (of a TimeEntry):
+Once a TimeEntry is locked, it is never edited — a mistake is a new
+TimeEntry row, `correction_of_id` pointing at the one it corrects and
+`duration_seconds` carrying a signed delta (negative to remove time,
+positive to add it back). The correction starts its own captured ->
+... lifecycle, the same doctrine ADR 0002 uses for a LedgerEntry
+reversal.
+_Avoid_: edit, adjustment (implies the original row changes — it never
+does)
+
+**Capture provenance**:
+"automatic" (ambient — every in-app action across the platform accrues
+attributable time to its case, per the 2026-08-09 billable-time
+ruling) or "manual" (the direct door, including the TopBar timer
+override). Both produce the same TimeEntry shape; only this field
+differs.
+_Avoid_: source (source_service already names which service; provenance
+names *how* the entry came to exist)
+
+**WorkSignal**:
+What another service publishes onto this service's private stream as
+billable work happens — the wire shape that becomes an automatic
+TimeEntry. Producers publish and move on; this service is a leaf on
+that call graph, the same shape relations-api's Fact/Edge split takes.
+_Avoid_: event (bare), fact (relations-api's word for a different thing)
+
+**Money**:
+Always an integer cents amount paired with a currency code — `Money` in
+`registry.py`, or the two plain `*_cents` / `currency` columns wherever
+a dataclass would be overkill. Never a float, anywhere, for any reason.
+_Avoid_: amount (bare — always say cents or Money)
+
+**Workspace scoping**:
+Every table carries `workspace_id`; every store method and HTTP door
+takes it as the first filter, sourced from `X-Workspace-Id`. No query
+in this service ever crosses a workspace.
+_Avoid_: tenant, org (the FairStandard-wide term is workspace)
+
+**BillingReader seam**:
+Not our Protocol — marketplace-api's (`marketplace-api/billing_reader.py`).
+`GET /subscriptions/lookup/active` is this service's real answer to it:
+given a `subscribed_ref` and a workspace, is there a live subscription.
+Serves the same bool shape `FakeBillingReader.has_active_subscription`
+already returns; marketplace-api still owns writing the `Http`
+implementation that calls this door.
+_Avoid_: confusing this with our own `PaymentProvider` / `AccountingSync`
+seams below — this one is a door we serve, not one we depend on.
+
+**Payment provider seam** / **Accounting sync seam**:
+Two `Protocol` + `Fake`-only seams (ADRs 0003, 0004). Neither has a real
+implementation in this land — charging a card and syncing to external
+accounting software are both later, separate work. Depend on the
+Protocol, never on `FakePaymentProvider` / `FakeAccountingSync`
+directly, outside of tests and `main.py`'s lifespan wiring.
+_Avoid_: gateway, processor (say "provider," matching the Protocol name)
+

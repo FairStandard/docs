@@ -1,0 +1,169 @@
+---
+title: "9. Relation facts are emitted best-effort, never a pipeline dependency"
+description: "Date: 2026-08-31"
+---
+
+Date: 2026-08-31
+
+## Status
+
+Accepted
+
+## Context
+
+FS-934 wires intake as a producer onto relations-api's fact stream: after
+a delivery, each delivered record is honestly `derived_from` the file it
+came from (identified by intake's own content fingerprint — intake has
+no other file identity to offer). The vocabulary is registry-validated by
+relations-api's projector, so intake uses the exact wire shape from
+relations-api's own `Fact`/`Reference`/`FactCodec` rather than inventing
+a looser one.
+
+Two facts the original scope asked for were held back at first because
+they were not honestly representable from what intake actually knew:
+
+- "record belongs-to import session" — relations-api's vocabulary had no
+  `import_session` reference type and no belongs-to-shaped kind.
+  Flagged on FS-934 as a vocabulary gap for relations-api to close, not
+  something intake should invent ad hoc.
+- "record mentions party" — intake's `parties.py` only rewrites raw
+  strings to canonical party *names*; there is no party identifier to
+  put in a `Reference("party", id)`. Emitting a fabricated id would be a
+  lie the graph would then treat as fact.
+
+relations-api closed the vocabulary gap (`import_session`, `belongs_to`,
+`mentions` — relations-api PR #8, relations-api/docs/adr/0004). Both
+facts are now emitted, per the "Amendment" section below.
+
+servicekit's `StreamQueue.submit` (pinned rev
+3941a3e6237792b230b81db33b8cadd0fd82ba31) does not buffer or retry a
+failed publish — a Redis outage surfaces as a raised exception from the
+client library, synchronously, at the call site. relations-api's own
+retry/dead-letter machinery lives entirely on the *consumer* side
+(`run_worker`); there is no producer-side buffering to opt into.
+
+## Decision
+
+Publishing is best-effort, with a cooldown circuit breaker on top.
+`RelationsEmitter.emit` wraps `submit` in a broad `try/except`, logs a
+warning, and returns — it never raises past its own boundary, so a
+downed relations stream cannot fail or stall an ingest. The Redis URL
+carries short `socket_connect_timeout` / `socket_timeout` query
+parameters (0.5s each) so the one attempt that does happen fails fast
+instead of hanging. No local queue or retry is built on intake's side:
+a fact that fails to publish is simply dropped, not buffered.
+
+The circuit breaker (added after messaging-api's version of this
+pattern found the gap, its own ADR 0007) matters for exactly this
+service: a single import can deliver hundreds of records at once, and
+`_emit_derivation_facts` calls `emit()` once per record id. A bare
+try/except without a breaker would pay the full connect timeout on
+every single emit during an outage — a thousand-record file would stall
+`mark_delivered`'s follow-up for roughly a thousand timeouts back to
+back, which is "best-effort" in name only. The first failure now opens
+the circuit for `cooldown_seconds` (default 30s); every emit during that
+window is an immediate no-op with no network attempt.
+
+This is safe because relations-api's `record_fact` is idempotent
+(`uq_edge_fact`) and the relations graph is a downstream convenience, not
+a source of truth intake depends on — a missed fact just means that one
+edge is absent from the graph until something re-derives it, never a
+corrupted or inconsistent state in intake's own store.
+
+### The deletion test
+
+Delete `relations_emitter.py` (or set `relations_redis_url=""`, which
+selects `NullRelationsEmitter`) and re-run `tests/test_engine.py` and
+`tests/test_relations_wiring.py::test_no_relations_emitter_configured_leaves_pipeline_unchanged`:
+every ingest outcome is identical. Verified in this change:
+`test_no_relations_emitter_configured_leaves_pipeline_unchanged` asserts
+the same delivered/records_delivered result the no-relations-argument
+default already produces,
+`tests/test_relations_emitter.py::test_emit_does_not_raise_when_redis_is_unreachable`
+proves `emit()` itself never raises against a real closed port, and
+`tests/test_relations_emitter.py::test_many_facts_against_a_downed_stream_cost_about_one_timeout`
+proves the circuit breaker's actual purpose: twenty facts against a
+black-holed address (a connect attempt that hangs to the timeout, not
+one that refuses instantly) complete in about one timeout's worth of
+wall time, not twenty.
+
+## Consequences
+
+The relations graph can lag or drop edges during a Redis outage without
+that ever becoming intake's problem. The cost is silent data loss on the
+graph side during an outage window — acceptable because the graph is
+rebuildable from relations-api's own bulk-load door and from replaying
+future facts, never from intake replaying old ones.
+
+## Amendment (2026-08-30): the two held-back facts are now emitted
+
+With relations-api's vocabulary extended, `_emit_relation_facts` in
+`engine.py` now emits, per delivered record, in addition to
+`derived_from`:
+
+- `belongs_to` — `Reference("record", id)` → `Reference("import_session",
+  str(session_id))`. Always honest: the session id is intake's own
+  primary key for the row the upload was filed under.
+- `mentions` — `Reference("record", id)` → `Reference("party",
+  canonical_name)`, emitted only when `from_party` or `to_party` on that
+  record, after `resolve_record_parties`, matches a name in
+  `context.parties` (the case's own known-party list, not a raw
+  unresolved string).
+
+**The id is the party's canonical name, not a generated identifier.**
+Intake still has no party-id scheme of its own — `parties.py`'s `Party`
+dataclass carries only `name`/`phones`/`emails`. Using the name is not
+the fabrication ADR 0009 originally ruled out (inventing an id that
+pretends to be some other service's key); it is the one identity intake
+actually holds, scoped by the case's own party list. The open question
+this leaves: if any other producer ever emits `party` references keyed
+by a real id (e.g. a party record's primary key from a future parties
+service), those nodes and intake's name-keyed nodes will not join in
+the graph. That reconciliation is out of scope here and belongs to
+whichever change introduces a real party identity.
+
+**Alignment caveat.** `records` (the resolved list) and
+`delivery.record_ids` (what `deliver_records` actually saved) are only
+safely zippable index-for-index when their lengths match — a
+within-call duplicate (two records sharing a `content_hash` in the same
+upload) makes `deliver_records` drop one, and intake has no way to know
+which surviving id belongs to which record. When the lengths diverge,
+`_emit_relation_facts` skips the mentions pass for that batch entirely
+rather than guess; `derived_from` and `belongs_to` are unaffected since
+they only need the id, never the record's contents. Covered by
+`tests/test_relations_wiring.py::test_within_file_duplicates_skip_mentions_but_keep_the_rest`.
+
+The deletion test above still holds unchanged: deleting
+`relations_emitter.py` or configuring `NullRelationsEmitter` leaves
+every ingest outcome identical, for all three kinds now emitted.
+
+## Amendment (estate hygiene sweep, FS-948): relations-api is now a
+pinned package dependency, not a hand-mirrored copy
+
+relations-api restructured into an installable package
+(`relations-api` PR #9) exporting `Fact`, `Reference`, `FactCodec`, and
+the vocabulary from `relations_api/__init__.py`. intake now pins it via
+`[tool.uv.sources]` at a git rev — the same pattern already used for
+`servicekit` and `files-api` — instead of hand-copying the dataclasses
+and codec into `relations_facts.py`.
+
+`relations_facts.py` no longer reimplements `Fact`/`Reference`/
+`FactCodec`; it re-exports relations-api's own and adds only what
+belongs to intake: `RelationKind` and `ReferenceType`, narrower
+`Literal`s declaring the subset of the full registry intake actually
+emits (`derived_from`/`belongs_to`/`mentions` and
+`record`/`file`/`import_session`/`party`), derived via `typing.get_args`
+the same way relations-api derives its own registry tuples.
+
+The old contract test kept a verbatim copy of relations-api's decode
+logic in `tests/test_relations_facts.py`, pinned to a comment noting the
+date it was last read from that repo by hand — a copy that would go
+stale silently if relations-api's wire shape ever changed and nobody
+remembered to re-copy it. `tests/test_relations_facts.py` now imports
+`relations_api` directly and round-trips intake's encoded facts through
+relations-api's real `FactCodec().decode()` and checks intake's kinds
+and reference types against relations-api's real `RELATION_KINDS` /
+`REFERENCE_TYPES` — a change to the actual dependency now fails this
+test the next time the pinned rev is bumped, rather than staying silent
+until someone happens to re-diff the two files by hand.
+

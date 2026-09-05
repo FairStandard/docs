@@ -1,0 +1,92 @@
+---
+title: "4. A public Visibility level, and status as a first-class field driving it"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+marketplace-api's docs/adr/0004 ("Listings publish IndexFacts to
+search-api, best-effort") named two gaps left open by its first wiring:
+
+1. search-api's `Visibility` was `"workspace" | "restricted"` — both
+   scoped, and `/internal/search` always required `X-Workspace-Id`.
+   Marketplace's public listings are deliberately NOT workspace-scoped
+   (canon: "public discovery has no tenant") — the entire point of a
+   listing is to be found by a stranger with no workspace at all.
+   Indexing it under its owning org's `workspace_id` made it findable
+   through search-api only by someone who already had that workspace's
+   header, which is not marketplace's actual public-discovery audience.
+2. search-api had no notion of listing lifecycle. A deactivated listing
+   had no honest way to leave a public index — the existing
+   delete-by-entity door is synchronous redaction (ADR 0003), a much
+   heavier tool than "this producer's status changed," and reaching for
+   it on every lifecycle transition would mean every producer
+   reimplementing delete-then-republish bookkeeping search-api is
+   better placed to own once, centrally.
+
+## Decision
+
+**A third `Visibility` value, `"public"`,** alongside the existing
+`"workspace"` and `"restricted"`. A public document still carries its
+real `workspace_id` (search-api still needs a home for the row, and
+`document_id`'s uniqueness still depends on it), but the public door
+below never requires or reads that field from a caller — the value on
+the row is bookkeeping, not a filter a public caller can supply.
+
+**`status` becomes a first-class column on `Document`/`IndexFact`,**
+not a `facets["status"]` key. It is a producer-owned registry string
+(`vocabulary.validate_status`), the same posture as `entity_kind` —
+search must not be recompiled every time a producer's lifecycle
+vocabulary changes. `PUBLIC_STATUS = "active"` is the one value the
+public door treats specially.
+
+**`GET /public/search`** is the new public door: no `X-Workspace-Id`
+header, calls `Store.search_public`, which hard-codes
+`visibility = 'public' AND status = 'active'` as its first two clauses
+and takes no `workspace_id` parameter at all — there is no argument on
+this door's signature that can widen it back to another visibility or
+another workspace's rows. The response shape (`_public_document_out`)
+never echoes `workspace_id`, `visibility`, or `status`.
+
+We chose **status-transitions-drive-the-filter** over
+**status-transitions-drive-a-delete-call**: a producer's normal
+create/update/deactivate republish (already the pattern every producer
+uses per ADR 0003's rebuildable-by-republish invariant) is the only
+thing that needs to change `status`. No producer needs a second call
+path, no producer needs to remember to also call delete-by-entity on
+deactivation, and a document that flips back to `"active"` (e.g. a
+listing reactivated) is public again on its very next republish with no
+extra step. Reaching for delete-by-entity remains correct for actual
+redaction (a document that should never be recoverable), which is a
+different, stronger guarantee than "not currently live."
+
+## The deletion test
+
+Delete the `status` column's role in `search_public`'s WHERE clause (or
+set every document's `status` to something other than `"active"`) and
+`tests/test_public_search.py` fails outright — nothing else in the
+public door's path enforces liveness. Marking a document
+`visibility="workspace"` or `"restricted"` and re-running the same tests
+proves the reverse: nothing about `status="active"` alone is sufficient
+to appear in public results.
+
+## Consequences
+
+Old facts published before this change (or by a producer that never
+sets `status`) decode with `status` defaulting to `PUBLIC_STATUS`
+(`queueing.IndexFactCodec.decode`) — a workspace-scoped document that
+predates this ADR keeps behaving exactly as it always did, since
+`status` never gated the internal door, only the new public one.
+Producers that want a document to be publicly findable must now set
+both `visibility="public"` and keep `status` accurate through every
+lifecycle transition; a producer that only sets `visibility="public"`
+once and never republishes on deactivation leaves a stale document
+public, same rebuildable-by-republish tradeoff ADR already accepted for
+the workspace-scoped path.
+

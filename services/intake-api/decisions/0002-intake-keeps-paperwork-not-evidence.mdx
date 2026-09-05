@@ -1,0 +1,11 @@
+---
+title: "Intake keeps the paperwork; the evidence store keeps the evidence"
+description: "Ruled 2026-08-30: parsed records, file bytes, and the audit chain belong to the evidence store, written once over its API. Intake's own Postgres holds only…"
+---
+
+Ruled 2026-08-30: parsed records, file bytes, and the audit chain belong to
+the evidence store, written once over its API. Intake's own Postgres holds
+only imports and import sessions — the mutable bookkeeping of arrival.
+This is what lets the front door and the archive scale on their own axes
+forever.
+

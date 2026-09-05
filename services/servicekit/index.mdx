@@ -1,0 +1,261 @@
+---
+title: "servicekit"
+sidebarTitle: "Overview"
+description: "The FairStandard service kit: the shared pieces every internal service composes instead of hand-writing again. Two deep modules were here from the start — the…"
+---
+
+The FairStandard service kit: the shared pieces every internal service
+composes instead of hand-writing again. Two deep modules were here from
+the start — the stream-worker engine and the doorway contract — and this
+build (FS-949, the extraction-bundle estate review, 2026-08-30) added
+five more, each pulled out of ceremony that had already been copy-pasted
+into two or more services.
+
+## Overview
+
+servicekit has no opinion about what a service does. It only owns the
+mechanics every service in this platform needs regardless of what it
+does:
+
+- **Talking to another service's HTTP API** without every reader
+  hand-writing its own retry/backoff/error-translation ceremony.
+- **Running background work off Redis Streams** with ack-on-return,
+  retry-on-raise, and dead-lettering past a retry budget — without every
+  service re-deriving that state machine.
+- **Encoding a dataclass onto that stream** without every service
+  writing its own str-dict codec.
+- **Paging through a `{items, total}` list API** without every reader
+  re-deriving the same offset loop.
+- **Publishing an insert-only, versioned row** (a pack, a module, a rule
+  set) without every store re-deriving the same bounded-retry race fix
+  — or, as happened once, silently dropping it.
+- **Reading `X-Workspace-Id`/`X-Caller-Id`** in a FastAPI service without
+  every `main.py` redefining the same `Annotated` alias.
+
+Every module here exists because at least two services already wrote the
+same thing. None of it is aspirational — see each module's ADR in
+`docs/adr/` for the exact consumer code it replaces, and the deletion
+test that proves the behavior it fixes.
+
+## Setup
+
+Python 3.14+, managed with [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync                 # core + dev dependencies
+uv run pytest -q        # needs Docker running — Redis and Postgres testcontainers
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+uv run pre-commit run --all-files
+```
+
+Core dependencies are only `httpx` and `redis` — a service that never
+touches FastAPI or sqlalchemy installs neither. Two optional extras add
+the rest:
+
+```bash
+uv add "servicekit[fastapi]"     # servicekit.fastapi's header deps
+uv add "servicekit[sqlalchemy]"  # publish_versioned's default retry_on
+```
+
+`servicekit/__init__.py` never imports `servicekit.fastapi` or
+`servicekit.testing` — `tests/test_no_hard_dependency.py` proves it, both
+by reading `pyproject.toml` and by re-importing the package with a clean
+`sys.modules` and checking neither submodule came along.
+
+## Architecture
+
+```
+servicekit/
+├── doorway.py      # Rejected / Unavailable, call_with_retries, doorway_errors
+├── streams.py      # StreamQueue, Codec protocol, DLQ handling
+├── codec.py         # dataclass_codec
+├── pagination.py    # fetch_all_pages
+├── versioning.py    # publish_versioned, VersionContention
+├── fastapi.py        # WorkspaceId, CallerId  (opt-in: import explicitly)
+└── testing.py         # write_raw_for_tests, reset_for_tests  (tests only)
+```
+
+`servicekit/__init__.py` re-exports everything above **except**
+`fastapi.py` and `testing.py` — those two are opt-in submodules, never
+pulled in as a side effect of `import servicekit`.
+
+### The doorway contract (`doorway.py`)
+
+Every call to another service's internal API goes through
+`call_with_retries`: a definitive rejection (a 4xx that isn't 429) raises
+`Rejected` immediately, a retryable failure (a transport error or one of
+`429/500/502/503/504`) backs off with full jitter and, past the retry
+budget, raises `Unavailable`. Nothing else escapes — raw `httpx`
+exceptions never reach a caller.
+
+`doorway_errors(base=YourReaderError, name="Files")` builds one reader's
+local `(Rejected, Unavailable)` pair plus the `.call()` helper that
+produces them, collapsing the ~30-line ceremony every reader used to
+hand-write:
+
+```python
+from servicekit import doorway_errors
+
+
+class FilesReaderError(Exception):
+    """Any failure talking to files-api — callers never see raw HTTP."""
+
+
+_kit = doorway_errors(base=FilesReaderError, name="Files")
+FilesRejected = _kit.rejected  # carries .status_code, .detail, .original
+FilesUnavailable = _kit.unavailable  # carries .original
+
+
+async def detect(client, file_bytes: bytes) -> str:
+    async def attempt():
+        response = await client.post("/v1/detect", files={"file": file_bytes})
+        response.raise_for_status()
+        return response.json()
+
+    payload = await _kit.call(attempt, unavailable="files-api unreachable")
+    return payload["format"]
+```
+
+A successful attempt's return value — including `None`, the shape
+`identity-api`-style readers use for "no such session" — passes through
+`.call()` untouched; it is never mistaken for a failure.
+
+### The stream engine (`streams.py`)
+
+`StreamQueue[PayloadT]` wraps Redis Streams consumer groups with the
+contract every worker in this platform lives by: a handler that returns
+gets its message acknowledged; a handler that raises leaves the message
+pending, to be reclaimed and retried once it sits idle past
+`reclaim_idle_ms`; a message that has been delivered more than
+`max_retries` times moves to the dead-letter stream `dlq:{stream}` with
+its error, and is acknowledged off the main stream. Bring a `Codec` for
+your payload type — everything else is the machinery.
+
+```python
+queue: StreamQueue[MyEvent] = StreamQueue(
+    redis_url,
+    stream="my:stream",
+    group="my-workers",
+    codec=my_codec,
+)
+await queue.submit(MyEvent(...))
+await queue.run_worker(handle_one_event)
+```
+
+`no_block` (new in `0.2.0`) controls whether `run_worker`'s read blocks
+waiting for new messages; `reclaim_idle_ms == 0` still implies it when
+`no_block` isn't passed, for services that relied on the old double duty
+— see `docs/adr/0006-test-only-stream-helpers-leave-the-production-class.md`.
+
+### dataclass_codec (`codec.py`)
+
+Builds a `Codec` from a dataclass's own field types — `str`, `int`,
+`float`, `bool`, or any of those `| None` — instead of a fourth
+hand-written copy of `EventCodec`/`MediaJobCodec`'s shape:
+
+```python
+from dataclasses import dataclass
+from servicekit import dataclass_codec
+
+
+@dataclass(frozen=True)
+class MyEvent:
+    workspace_id: str
+    count: int
+    note: str | None = None
+
+
+codec = dataclass_codec(MyEvent)  # raises TypeError now if a field type isn't supported
+```
+
+A missing required field, or text that doesn't parse as its field's
+type, raises `ValueError` from `decode` — the same shape `streams.py`
+already routes to the dead-letter stream.
+
+### fetch_all_pages (`pagination.py`)
+
+The `{items, total}` page loop deadlines-api's and filings-api's case
+readers both hand-write:
+
+```python
+from servicekit import fetch_all_pages
+
+
+async def fetch_page(offset: int) -> dict:
+    response = await client.get(..., params={"limit": PAGE_SIZE, "offset": offset})
+    response.raise_for_status()
+    return response.json()
+
+
+items = await fetch_all_pages(fetch_page, page_size=PAGE_SIZE)
+```
+
+Stops on a short page or once the running offset reaches the page's own
+`total` — whichever comes first, so a lying `total` can't spin the loop
+forever.
+
+### publish_versioned (`versioning.py`)
+
+The bounded `IntegrityError`-retry around a `max(version) + 1`-then-
+insert publish door — the pattern packs-api and learning-api already
+have, and the fix for the same pattern state-law-api copied without the
+retry (see `docs/adr/0004-publish-versioned-fixes-the-retry-state-law-dropped.md`):
+
+```python
+from servicekit import publish_versioned
+
+async def _publish_once():
+    async with sessions() as session:
+        current = (await session.exec(select(func.max(Model.version)).where(...))).one()
+        row = Model(version=(current or 0) + 1, ...)
+        session.add(row)
+        await session.commit()
+        return row
+
+row = await publish_versioned(_publish_once)  # retries on sqlalchemy.exc.IntegrityError
+```
+
+`retry_on` defaults to sqlalchemy's `IntegrityError`, lazily imported —
+pass it explicitly for a store with a different ORM or no sqlalchemy
+installed. Exhausting the retry budget raises `VersionContention`, never
+a bare `RuntimeError`.
+
+### Workspace/caller header DI (`fastapi.py`, opt-in)
+
+```python
+from servicekit.fastapi import CallerId, WorkspaceId
+
+
+@app.get("/internal/feed")
+async def feed(workspace_id: WorkspaceId, caller_id: CallerId, store: StoreDep): ...
+```
+
+### Test helpers (`testing.py`, tests only)
+
+```python
+from servicekit.testing import reset_for_tests, write_raw_for_tests
+
+await reset_for_tests(queue)  # clears stream, DLQ, error hash
+await write_raw_for_tests(queue, {"bad": "field"})  # simulates a buggy producer
+```
+
+## Usage: adoption
+
+This build is servicekit-only, by design (FS-949 scope). No consumer
+repo (intake-api, deadlines-api, filings-api, messaging-api,
+notifications-api, media-api, packs-api, learning-api, state-law-api,
+case-api) has been touched. A separate, later pass adopts each module
+into its consumers, pinned to the commit SHA this build merged as.
+
+## Changelog
+
+- **0.2.0** (FS-949, 2026-08-30) — added `doorway_errors`,
+  `dataclass_codec`, `fetch_all_pages`, `publish_versioned`,
+  `servicekit.fastapi`, `servicekit.testing`. **Breaking:**
+  `StreamQueue.write_raw_for_tests` and `.reset_for_tests` moved to
+  `servicekit.testing` as functions and are no longer methods on
+  `StreamQueue`; `StreamQueue.__init__` gained `no_block`.
+- **0.1.0** — the stream engine and the doorway contract.
+

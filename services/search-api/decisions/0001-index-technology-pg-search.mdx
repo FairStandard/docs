@@ -1,0 +1,90 @@
+---
+title: "1. Index technology: Postgres + pg_search (ParadeDB)"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+FS-913 needed a search index for hundreds of thousands of documents per
+attorney workspace, workspace-partitioned, fed continuously by
+single-document upserts and deletes off a queue (not batch loads),
+needing full-text search, faceted filtering, and typo tolerance. It must
+be self-hostable on GCP with no managed-vendor lock-in, and it must run
+as a real container in `testcontainers` integration tests, not a mock.
+Greenfield — no incumbent, no migration cost.
+
+Research (scratch_pads/fs913-index-selection.md) verified current
+primary sources rather than trusting training memory, and directly
+inspected the installed `testcontainers==4.15.0` wheel as ground truth
+for what containers it actually supports. Six options were evaluated:
+plain Postgres full-text search (no typo tolerance — ruled out on
+features), Postgres + pg_search/ParadeDB, OpenSearch, Elasticsearch
+(ruled out on license — not clean Apache-2.0), Meilisearch, and
+Typesense. Meilisearch and Typesense were both ruled out on the same
+concrete gap: `testcontainers-python` ships no dedicated module for
+either (confirmed by inspecting the wheel and by Typesense's own docs,
+which point Python users at the generic container API instead of a
+supported module) — the brief explicitly required a real container via
+testcontainers, not a hand-rolled wrapper.
+
+This ADR's SQL claims were verified empirically, not just from docs:
+`paradedb/paradedb:latest` was pulled and run locally, and
+`CREATE INDEX ... USING bm25`, `paradedb.match(field, value, distance
+=> N)` fuzzy matching, jsonb facet containment filtering, and DELETE
+actually removing a row from the index were all exercised directly
+against a live container before being relied on in this service's code.
+
+## Decision
+
+search-api's index is Postgres with the `pg_search` extension
+(ParadeDB), self-hosted via the `paradedb/paradedb` Docker image.
+Documents live in one `document` table (workspace_id, entity_kind,
+entity_id, title, body, facets jsonb, visibility) with a BM25 index
+(`USING bm25 (id, workspace_id, entity_kind, title, body, facets) WITH
+(key_field='id')`) covering both the free-text fields and the facet
+data, so full-text, faceted, and typo-tolerant retrieval share one index
+and one read path. Typo tolerance comes from `paradedb.match(field,
+value, distance => 2)`, not a bare `@@@` string comparison, which has no
+fuzzy matching at all.
+
+**The tradeoff against the runner-up (OpenSearch):** OpenSearch is the
+more conventional best-in-class open-source search engine here — real
+faceting, real fuzzy matching, Apache-2.0, and (like pg_search) it has a
+first-class `testcontainers-python` module. What it costs is a second
+stateful clustered system: its own ops burden (JVM tuning, shard
+management, backup/restore, monitoring) standing beside Postgres for
+the life of the service, in every environment including dev and CI.
+pg_search gets the same three required capabilities — BM25 full-text,
+faceted aggregation via jsonb, typo-tolerant fuzzy match — with zero new
+infrastructure, riding on the Postgres this shop already runs
+everywhere, and its event-fed write model (upserts land in the same
+transaction as the write, immediately searchable) is a better
+architectural fit for a queue-driven, non-batch workload than
+maintaining a separate indexing pipeline to keep an external cluster in
+sync.
+
+**The one real risk, named rather than papered over:** pg_search is a
+single-vendor open-source extension (ParadeDB, a YC-backed startup),
+not a foundation-governed project the way OpenSearch is under the Linux
+Foundation. If ParadeDB folds or changes its license terms, there is
+less institutional weight behind it. Community pg_search is
+Apache-2.0/PostgreSQL-licensed today, and because it is "just SQL plus
+an index access method" rather than a separate service, there is no
+external system to migrate off of if that risk ever materializes — the
+data already lives in Postgres either way.
+
+## Consequences
+
+No second stateful system to run, patch, or back up. Workspace
+isolation is enforced the same way every other Postgres-backed service
+on the platform enforces it — `WHERE workspace_id = ...` as the first
+predicate on every query — rather than a bespoke tenant model. Tests
+use the real `paradedb/paradedb` image via `testcontainers`, not a mock
+or a stub search engine.
+

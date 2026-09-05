@@ -1,0 +1,47 @@
+---
+title: "1. A separate billing lifecycle from platform entitlements"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted. Amended by ADR 0005: this ADR's "platform charges" exclusion
+was too wide — this service *is* the home of platform subscription
+billing (money owed). What still stands, unchanged: entitlement
+*state* (what an org's tier or add-ons entitle it to access) has no
+model, table, or door here.
+
+## Context
+
+FairStandard already tracks org-level entitlements — what an
+organization pays the platform for (tiers, add-ons, per-case flags).
+Client invoicing is a different lifecycle entirely: it is money the
+firm's *client* owes the firm for legal work, denominated in the firm's
+own currency and terms, moving through draft/sent/paid, and touching a
+trust ledger that is legally distinct from the firm's operating funds.
+Folding the two into one billing model would mean every entitlement
+change risks a client-money bug, and every client-billing change risks
+an org-payment bug.
+
+Canon is explicit: the org always pays the platform; clients pay legal
+invoices. Two payers, two lifecycles.
+
+## Decision
+
+`billing-payments-api` owns exactly one of these lifecycles: client
+invoicing, retainer trust accounting, and the billable time that feeds
+invoices. It has no model, table, or door for org-level entitlements,
+tiers, or platform charges — that stays wherever entitlements already
+live. The two services never share a database, and nothing in this
+service assumes it can read or write entitlement state.
+
+## Consequences
+
+A bug in retainer draws can never corrupt what an org owes the
+platform, and vice versa. The cost is that anything genuinely shared
+between the two lifecycles (e.g. "is client billing enabled for this
+workspace") has to be asked for, not assumed — this service treats that
+as external state it is told, not state it owns.
+

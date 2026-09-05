@@ -1,0 +1,60 @@
+---
+title: "4. Reassessed servicekit: adopt the header DI, skip the queue/doorway machinery"
+description: "Date: 2026-08-31"
+---
+
+Date: 2026-08-31
+
+## Status
+
+Accepted
+
+## Context
+
+ADR 0003 (2026-08-30) declined servicekit for this repo's first wave:
+case-api is a CRUD foundation store over Postgres with no outbound
+queue and no doorway to another service's private data, so
+`StreamQueue`, `doorway_errors`, and `call_with_retries` had nothing to
+attach to. That reasoning still holds — nothing in this repo publishes
+to a stream or calls another service's HTTP door.
+
+The finale remediation pass asked this repo to reassess servicekit
+0.2.0 specifically, not just re-run ADR 0003's original question.
+0.2.0 added `servicekit.fastapi` — `WorkspaceId`/`CallerId` header DI
+— and its own docstring names this exact file: "the Annotated deps
+case-api's and notifications-api's main.py both redefine verbatim."
+`main.py` was doing precisely that:
+`WorkspaceId = Annotated[str, Header(alias="X-Workspace-Id")]`,
+byte-for-byte the same line servicekit now packages.
+
+`servicekit.pagination.fetch_all_pages` was also checked and does not
+fit: it is a client-side helper for paging through *someone else's*
+`{items, total}` endpoint (its own docstring names deadlines-api's and
+filings-api's `HttpCaseReader` — services that page through case-api's
+docket). case-api is the producer of that shape, not a consumer of
+anyone else's, so there is nothing here for `fetch_all_pages` to wrap.
+
+## Decision
+
+Add `servicekit[fastapi]` as a dependency (pinned at `74e92131...`,
+the same rev every other repo in this sweep landed on) for exactly one
+thing: `main.py` now imports `WorkspaceId` from `servicekit.fastapi`
+instead of redefining it. `Header` and the manual `Annotated[...]` are
+gone from this file. Nothing else changes — no `StreamQueue`, no
+`doorway_errors`, no new queue or HTTP client wiring, because none of
+that has anything to attach to yet, same as ADR 0003 concluded.
+
+This clears ADR 0003's own bar: the CI workflow already carries the
+`SERVICEKIT_TOKEN` `insteadOf` step (added in that wave specifically so
+this moment wouldn't need a CI change), so adopting the dependency here
+touched only `pyproject.toml`, `uv.lock`, and one import in `main.py`.
+
+## Consequences
+
+A future slice that does need a queue or a doorway (deadlines,
+cooperation, discovery tracking — ADR 0003's own list) adds
+`StreamQueue`/`doorway_errors` then, at whatever servicekit revision is
+current at that time, same as ADR 0003 already said. This ADR only
+narrows "no servicekit dependency" to "no servicekit *queue or doorway*
+dependency" — the header DI is in use starting now.
+

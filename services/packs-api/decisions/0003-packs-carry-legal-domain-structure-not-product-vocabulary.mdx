@@ -1,0 +1,81 @@
+---
+title: "Packs carry legal-domain structure, not product vocabulary"
+description: "Ruled 2026-08-31 (Christopher), correcting the pack model shipped in the FS-894 wave-1 build. Supersedes the placeholder-flag comments in…"
+---
+
+Ruled 2026-08-31 (Christopher), correcting the pack model shipped in the
+FS-894 wave-1 build. Supersedes the placeholder-flag comments in
+`seed/family-law.json`'s v1 `_comment` field and in ADR 0002's mention of
+`finding_types`/`document_categories` as example section kinds. Full
+research trail: `scratch_pads/pack-seam-research.md`,
+`scratch_pads/pack-seam-architecture.md`,
+`scratch_pads/family-law-taxonomy-draft.md`.
+
+## The correction
+
+Christopher rejected the shipped pack framing directly: "family law pack
+should be legal specific, right? So all of the laws related to family
+law in every state?" and, twice, "doesn't seem like the right seam"
+about finding types and document categories living in a pack.
+
+A pack IS: the legal-domain structure of one practice area — its
+lifecycle phases (unchanged, ruled by DESIGN.md section 6), its areas of
+practice, the causes of action those areas produce, and the
+order/provision types a case in that practice area recognizes. This is
+the shape a family-law attorney would recognize regardless of which
+state they practice in.
+
+A pack is NOT: per-jurisdiction statute text or process instances (that
+is `state-law-api`'s job, already modeled as `(jurisdiction,
+practice_area)` — ADR 0004 in that service), or a product service's own
+detection/classification vocabulary (`finding_type` is analysis-api's;
+`document_category`/`DocumentType` is intake-api's/files-api's).
+
+## What changed
+
+- `seed/family-law.json` republishes as a new, immutable pack version
+  (ADR 0001 - v1's `finding_types`/`document_categories` sections stay
+  exactly as originally published and readable forever; this is a new
+  version, not an edit). The new version drops `finding_types` and
+  `document_categories` and adds `legal_domain`: `areas_of_practice`,
+  `causes_of_action` (each pointing at an area by key), and
+  `order_provision_types` (reusing the mined provision-behavior
+  vocabulary from `analysis-api/engine.py`, per
+  `family-law-taxonomy-draft.md`).
+- A new `PracticeArea` table is the registry every pack publish now
+  validates `practice_area_key` against (`store.publish` raises
+  `UnknownPracticeAreaError`, surfaced as `422`). This replaces the old
+  `SELECT DISTINCT practice_area_key FROM pack` as the source of truth
+  for "what practice areas exist" (ADR 0002 previously treated the Pack
+  table itself as that source; a registry that other services can
+  register against and validate against did not exist before this).
+  `GET /internal/practice-areas/{key}` and `POST
+  /internal/practice-areas/{key}` (register, idempotent) are the new
+  doors. `GET /internal/practice-areas` (list) now reads the registry,
+  not the Pack table.
+- The `legal_domain` section gets a documented, publish-time-validated
+  wire contract (`_validate_legal_domain_section` in `store.py`) —
+  `sections` itself stays untyped JSON (ADR 0002 unchanged), but this one
+  named section kind is shape-checked at the door, the same discipline
+  state-law-api already uses for its own sections (ADR 0004 there).
+
+## What did not change
+
+- `Pack.sections` stays a JSON blob keyed by section kind — ADR 0002's
+  "extensible data, not enums" argument still holds. Adding
+  `legal_domain` as a new key required zero schema migration to `Pack`.
+- Lifecycle phases: unchanged content, unchanged section key,
+  unchanged consumer (`case-api`'s `PacksReader.validate_phase`).
+- `finding_type`/`document_category` vocabularies do not move INTO this
+  service either — they stay owned by analysis-api and
+  intake-api/files-api respectively. A pack does not define them; it may
+  reference them by key in a future section, but does not do so yet.
+
+## Why not delete the sections silently
+
+The deletion test in `pack-seam-research.md` Part 2 confirmed zero live
+consumers of `finding_types`/`document_categories` from packs-api today
+(grep-confirmed against analysis-api and intake-api). Removing them from
+the published pack changes nothing observable for any existing caller —
+proof this correction is safe to land without a consumer-side migration.
+

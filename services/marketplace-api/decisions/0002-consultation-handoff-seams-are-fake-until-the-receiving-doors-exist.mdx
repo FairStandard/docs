@@ -1,0 +1,69 @@
+---
+title: "2. Consultation-accept handoff seams are Fake until the receiving doors exist"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon requires that accepting a consultation request "hand off" the
+match to the rest of the platform: the requester and provider now have
+a live connection identity-api may want to know about, a caseless
+requester may want a case opened, and a messaging channel should exist
+between the two parties. None of the receiving doors this would call —
+identity-api's account-linking, case-api's case-creation-from-lead, or
+messaging-api's channel-open — have been built as of this wave.
+
+Two shapes were considered:
+
+1. **Skip the seam entirely** — accept a request, mark it `accepted`,
+   and leave the downstream integration as a TODO for whichever service
+   builds its door first.
+2. **Name the seam now as a `Protocol`, back it with a `Fake`, and call
+   it on every accept** — the same pattern entitlements-api's
+   `IdentityReader` and this service's own `BillingReader` (ADR 0003)
+   use for a real door that doesn't exist yet on the other end.
+
+Skipping the seam entirely means the accept code path never gets
+exercised against the shape those three integrations will eventually
+need, and "hand off" would be undocumented intent rather than a
+concrete interface any of the three services can implement against once
+their door exists.
+
+## Decision
+
+`handoff.py` defines three `Protocol`s — `IdentityHandoff`,
+`CaseHandoff`, `MessagingHandoff` — each with exactly one `Fake`
+implementation (`FakeIdentityHandoff`, `FakeCaseHandoff`,
+`FakeMessagingHandoff`). `main.py`'s lifespan wires all three Fakes into
+`Store`; there is no `Http` implementation for any of them, because
+none of the three receiving doors exists yet. This is recorded honestly,
+not worked around.
+
+`store.accept_request` always does two things on acceptance, regardless
+of what the seams do:
+
+1. Persists a `ConsultationHandoff` row — who (`requester_ref`), which
+   listing, which request, when. This is the durable fact of "this
+   accept happened," independent of downstream integration.
+2. Calls all three Fake seams with the same information a real
+   implementation would need (`requester_ref` and `provider_ref` for
+   identity/messaging; `requester_ref` and `listing_id` for case) — so
+   `tests/test_api.py`'s `test_accept_emits_the_handoff_fact` proves the
+   call shape a real `Http*Handoff` will need to satisfy, before any of
+   the three exist.
+
+## Consequences
+
+When identity-api, case-api, or messaging-api build their receiving
+doors, each gets its own `Http*Handoff` implementation satisfying the
+already-defined `Protocol` — no change to `store.py`'s accept logic or
+to the `ConsultationHandoff` table. Until then, "hand off" is real
+software (a persisted fact plus three testable, protocol-typed calls),
+not a comment promising future work.
+

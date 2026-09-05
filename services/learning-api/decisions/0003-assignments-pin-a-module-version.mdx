@@ -1,0 +1,23 @@
+---
+title: "Assignments pin a module version at assign time"
+description: "Ruled 2026-08-30. Assignment.moduleversion is set once, when the assignment is created, and never changes after. Progress records lesson completion against…"
+---
+
+Ruled 2026-08-30. `Assignment.module_version` is set once, when the
+assignment is created, and never changes after. `Progress` records lesson
+completion against `lesson_key` values from that pinned version's lesson
+list, not against "whatever `module_key`'s current version happens to
+be."
+
+The alternative — an assignment that floats on the module's current
+version — breaks the moment a module is republished while an assignment
+is in progress: a lesson key an assignee already completed could
+disappear or be renumbered, silently orphaning their progress rows. This
+is the same doctrine packs-api already applies at the reader end (ADR
+0001: "a caller that needs stability instead pins a specific version
+number") — an assignment is exactly that kind of caller, so it pins.
+
+A caller that wants an assignee to pick up new content republishes and
+creates a new assignment; the old one, and its progress, stays readable
+against the version it was actually assigned.
+

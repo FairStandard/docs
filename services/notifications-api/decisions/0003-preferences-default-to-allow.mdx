@@ -1,0 +1,39 @@
+---
+title: "3. A preference with no rule means allow, not mute"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+`ChannelPreference` rows are opt-in mutes: a recipient sets one to
+quiet a kind pattern on a channel. New notification kinds appear
+constantly as producers ship features (ADR 0002) — no recipient can
+pre-configure a preference for a kind that doesn't exist yet.
+
+## Decision
+
+`Store.is_allowed` returns `True` when no preference row matches a
+given (recipient, kind, channel). A recipient only ever loses a
+delivery by explicitly muting it; every new kind a producer adds
+reaches every recipient on every channel until they choose otherwise.
+When both an exact-kind rule and a matching `prefix.*` wildcard rule
+exist, the exact match wins — a recipient can mute a whole family
+(`deadline.*`) and still carve out one kind they want back
+(`deadline.approaching`).
+
+## Consequences
+
+A recipient who wants quiet-by-default on some channel (say, no email
+at all until they opt in) cannot express that with today's doors — the
+model only supports muting specific kind patterns, not flipping a
+channel to opt-in wholesale. That is deliberately out of scope this
+land; if it is needed, it is an explicit wildcard-mute-everything
+preference (`kind_pattern="*"`) a client sets, not a change to this
+default.
+

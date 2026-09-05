@@ -1,0 +1,32 @@
+---
+title: "Auth mechanics: JWT access tokens plus revocable hashed sessions"
+description: "Ruled 2026-08-30. This service ports the SHAPE of the monolith's auth mechanics (platform/apps/api/app/services/auth.py,…"
+---
+
+Ruled 2026-08-30. This service ports the SHAPE of the monolith's auth
+mechanics (`platform/apps/api/app/services/auth.py`,
+`platform/apps/api/app/models/pg/session.py`) onto its own Postgres, with
+no Mongo, no legacy dual-token support, and no RLS.
+
+- **Passwords** are hashed with bcrypt. Plaintext never touches storage or
+  logs.
+- **Access tokens** are JWTs signed with HS256, carrying `sub` (the
+  account id), `iat`, and `exp`. The secret and expiry live in
+  `Settings` under the `IDENTITY_` prefix.
+- **Sessions are the revocation mechanism.** A JWT being unexpired is not
+  enough to prove an account is still logged in — a matching `Session`
+  row (sha256 of the token, an expiry) must also exist. `/internal/verify`
+  checks both. Logging out deletes the session row, which revokes the
+  token immediately even though the JWT itself would still decode as
+  valid until its own `exp`.
+- **No SSE-purpose tokens in this service.** The monolith's short-lived
+  `purpose: sse` token exists because its API streams over SSE directly;
+  that concern belongs to whichever downstream service serves a stream,
+  not to identity. If a future caller needs one, it is a small addition
+  to `auth.py`'s pure functions, not a redesign.
+
+`auth.py` stays pure functions (hash/verify password, create/decode JWT,
+hash a token for storage) with no database access, so it is trivial to
+unit test without Postgres. `store.py` is the only place that touches
+`Session` rows.
+

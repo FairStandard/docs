@@ -1,0 +1,44 @@
+---
+title: "Domain model"
+description: "The evidence context is the platform's permanent, tamper-evident memory. It holds what happened — records, files, and the audit trail of every touch — written…"
+---
+
+The evidence context is the platform's permanent, tamper-evident memory. It
+holds what happened — records, files, and the audit trail of every touch —
+written once by intake and read by everyone, forever.
+
+## Language
+
+**Record**:
+A single call or message belonging to a case. Written once, never changed,
+deduplicated by content hash within a workspace.
+_Avoid_: item, entry, event
+
+**File**:
+An uploaded artifact (audio, PDF, export) stored in the object bucket and
+identified by its content hash. The bytes live in the bucket; records and
+the audit chain carry the file keys that exist today. A dedicated
+file-level ledger table is deliberate future work (ADR 0005) - it does
+not exist yet.
+_Avoid_: attachment, blob, upload (that word means the act, not the thing)
+
+**Content hash**:
+The SHA-256 fingerprint that identifies a record or file. Two things with
+the same hash in the same workspace are the same thing.
+_Avoid_: checksum, digest
+
+**Audit entry**:
+One link in the tamper-evident chain: what was done to which evidence, by
+whom, when — each entry sealed with the hash of the entry before it.
+_Avoid_: log line, history row
+
+**Chain verification**:
+Recomputing every audit entry's seal in order to prove nothing was altered
+or removed. A break names the first bad link.
+_Avoid_: integrity check (too vague)
+
+**Workspace**:
+The isolation unit all evidence is scoped to. Every query filters by
+workspace before anything else.
+_Avoid_: tenant, org
+

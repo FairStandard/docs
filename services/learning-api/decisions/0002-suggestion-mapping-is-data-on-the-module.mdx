@@ -1,0 +1,21 @@
+---
+title: "Suggestion mapping is data on the module, not code"
+description: "Ruled 2026-08-30. There is no lookup table, dictionary literal, or if/elif chain anywhere in this service mapping an analysis finding type to a module.…"
+---
+
+Ruled 2026-08-30. There is no lookup table, dictionary literal, or
+if/elif chain anywhere in this service mapping an analysis finding type
+to a module. `Module.addresses_finding_types` is a JSON list of finding
+type strings, published as part of the module's content; `suggestions.py`
+does nothing more than intersect a case's finding types (read through
+`analysis_reader.py`) against that field across the current catalog and
+sort the result by `module_key` for a stable, deterministic order.
+
+This means retuning which modules get suggested for which findings — the
+kind of change that happens often as content and analysis both evolve —
+is a module republish, not a code change or a deploy. `finding_types` on
+the family-law pack (packs-api `seed/family-law.json`) is the taxonomy
+this data currently draws its values from; when that taxonomy changes,
+`addresses_finding_types` on affected modules changes with it, and
+nothing in `models.py`, `store.py`, or `suggestions.py` does.
+

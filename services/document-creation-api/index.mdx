@@ -1,0 +1,70 @@
+---
+title: "document-creation-api"
+sidebarTitle: "Overview"
+description: "The FairStandard document-creation engine: the one engine every document-writing surface on the platform uses — templates, structured document drafts, and…"
+---
+
+The FairStandard document-creation engine: the one engine every
+document-writing surface on the platform uses — templates, structured
+document drafts, and rendering. Own Postgres, own service,
+workspace-scoped throughout.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+Configuration is environment-driven under the `DOCCREATE_` prefix
+(`settings.py`). Migrations are real alembic — `uv run alembic upgrade
+head` against the same `DOCCREATE_DATABASE_URL`; the chain is exercised
+both directions by `tests/test_migrations.py`.
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+uv run pre-commit run --all-files
+```
+
+CI runs pytest, ruff, and pyrefly from the committed lockfile on every
+push and pull request. Tests spin up a real Postgres via testcontainers —
+Docker must be running locally to run them.
+
+## Architecture
+
+- `models.py` / `store.py` — `Template` (versioned) and `Draft`, on the
+  service's own Postgres, every query scoped by `workspace_id`.
+- `assembly.py` — the assembly engine: turns a draft's stored blocks into
+  the blocks a renderer draws, computing caption text and exhibit numbers
+  at read time rather than storing either (ADR 0001).
+- `render.py` — reportlab writing straight to `BytesIO`, no temp files.
+  PDF today; `RENDERERS` is the seam more formats slot into.
+- `case_reader.py` — the `CaseReader` seam to case-api for caption facts
+  (ADR 0003). `FakeCaseReader` backs tests; `HttpCaseReader` calls
+  case-api's real doors; contract-tested to the same shape in
+  `tests/test_case_reader_contract.py`.
+- `main.py` — the internal HTTP surface, workspace-scoped by the
+  `X-Workspace-Id` header: create/get templates, create a draft (from
+  scratch or copy-at-apply from a template, ADR 0002), get/update a
+  draft's blocks, render a draft.
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Out of scope this wave
+
+Where a draft's content comes from (an upstream app fills in blocks),
+case ownership and party records (case-api owns those), and filing with a
+court (a later service).
+
+## Status
+
+Templates, drafts, assembly, and PDF rendering are complete and
+workspace-scoped. Only case-api is read through a downstream seam today;
+more readers (for other document types' computed pieces) are additive.
+

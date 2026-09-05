@@ -1,0 +1,76 @@
+---
+title: "4. No relation facts to emit yet"
+description: "Date: 2026-08-31"
+---
+
+Date: 2026-08-31
+
+## Status
+
+Accepted
+
+## Context
+
+FS-934 asked every pipeline in the intake chain to publish relation
+facts onto relations-api's fact stream: "on record/file registration,
+emit containment/derivation facts evidence actually knows." intake-api
+already does this (its own ADR 0009) — after a delivery it emits
+`(record, derived_from, file)` using the file fingerprint it computed
+itself and the record ids evidence-api handed back.
+
+Reading evidence-api's own write contract (`main.py`'s `/internal/records`
+and `/internal/cases/{case_id}/audit` doors, `store.py`, `models.py`)
+against relations-api's registry (`vocabulary.py`) to find what evidence
+could honestly add on top of that:
+
+- **`derived_from` (record → file).** `RecordIn` (the body of
+  `POST /internal/records`) carries no file identifier at all — no
+  fingerprint, no upload key, nothing a `Reference("file", id)` could
+  point at. `content_hash` on `Record` is a per-record hash computed by
+  files-api's extraction, not a file-level id. The audit door does carry
+  a `file_hash`, but that call receives no `record_ids` — correlating a
+  later audit append back to an earlier `save_records` batch by
+  case/timing would be a guess, not a fact evidence-api actually knows.
+  There is no honest way to construct this fact here; it is already
+  covered by intake, the service that does hold both ends.
+
+- **`mentions_same_party` (record ↔ record), rejected on the scale
+  test.** This one IS constructable: `Record.from_party`/`to_party` are
+  plain strings, so evidence could pair a new record against every
+  existing record in the case sharing a party and emit one edge per
+  pair. Rejected anyway — family-law cases concentrate on two or three
+  parties across hundreds of thousands of records, so pairwise edges
+  grow O(n²) per party and blow through ADR 0002's few-million-edges-
+  per-workspace budget by orders of magnitude for exactly the case this
+  service is built to carry at scale. The right shape is a hub model —
+  `(record, mentions_same_party, party)` against a real party id — which
+  needs a `party` identity relations-api's registry does not yet carry
+  (the same gap already flagged on FS-934 from intake-api's side, where
+  `parties.py` also only has names, never ids). Nothing should wire the
+  pairwise version later without re-deciding this; that decision belongs
+  here, not to whoever notices the O(n²) growth in production.
+
+- **`attachment_of` / `flagged_by_finding` / `annotated_by` /
+  `same_thread`.** Not this service's knowledge — packages, findings,
+  annotations, and threading are messaging-api's and analysis-api's
+  domains respectively. Nothing in evidence-api's schema represents any
+  of them.
+
+## Decision
+
+evidence-api emits no relation facts. No emitter module is added — an
+emitter with zero call sites is dead code, not infrastructure. If a
+future change gives evidence-api an honest fact to publish (for example,
+if `RecordIn` starts carrying the file fingerprint, or relations-api's
+registry grows a `party` reference type), the pattern to copy is
+intake-api's: `relations_facts.py` (mirrored codec, contract-tested) and
+a fire-and-forget `RelationsEmitter` wrapping servicekit's `StreamQueue`.
+
+## Consequences
+
+The relations graph gets no edges from evidence-api today. That is
+correct, not a gap in this change — the gap is upstream, in
+relations-api's vocabulary (no file id passed to this service, no party
+reference type), and is tracked on FS-934 rather than worked around here
+with a fact this service cannot actually stand behind.
+

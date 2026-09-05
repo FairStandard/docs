@@ -1,0 +1,67 @@
+---
+title: "6. Classify by meaning, not container"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The ported format parsers cover exactly the exports Christopher happened
+to have. Real intake is wider: a screenshot of iPhone call history IS a
+call record; a screenshot of a message thread IS a message log; a screen
+recording scrolled through messages IS a message log; a video of a paper
+document being flipped through IS a record. The container (PDF, image,
+video, CSV) says how to read the file; the meaning (call record, message
+log, court document) says what must come out of it. Christopher's ruling
+2026-08-30: "REGARDLESS OF HOW THE PDF IS LAID OUT, we have to get the
+right data off the page," extended to every container.
+
+## Decision
+
+The ingest engine is the one front door, and its pipeline is
+modality-agnostic:
+
+1. Fingerprint, classify the container, and register. Classification's
+   container verdict doubles as the registration's media type, so the
+   classify call runs first; an already-delivered duplicate stops here,
+   while a re-upload whose first attempt failed or was flagged is
+   retried — "duplicate" is only honest about files that actually made
+   it in.
+2. Classify the MEANING: deterministic rules first (bytes and names —
+   the existing classifier); an AI meaning tier may decide only when the
+   rules cannot. This softens the earlier "never by AI" stance to
+   deterministic-first, the same cost law as extraction.
+3. Extract: the deterministic processor when one fits the exact format;
+   the AI extraction tier otherwise (document reader today; image and
+   frame-by-frame video readers are additive tiers behind the same
+   Extractor seam).
+4. Validate per ADR 0004; failures escalate; still-invalid imports are
+   flagged for review. Nothing invalid is delivered silently.
+5. Resolve parties: phone numbers and handles in extracted records are
+   cross-referenced against the case's known parties and rewritten to
+   canonical names; the engine injects case and workspace identity.
+6. Deliver to the evidence store and append to the audit chain.
+
+Format parsers are only the cheap fast lane. Adding a reader for a new
+container or format is additive — a new processor registration or a new
+extractor tier — and never moves the engine's seams.
+
+Scope note: this slice ships the engine with the deterministic meaning
+tier and the document-reading AI extraction tier. The AI meaning tier and
+the image and frame-by-frame video extraction tiers are additive
+follow-ups behind the same seams — no delivery path may be built that
+bypasses the engine while waiting for them.
+
+## Consequences
+
+Every delivery path goes through one engine, so ADR 0004's
+validate-escalate-flag law is enforced mechanically rather than by
+convention. The AI meaning tier and the image/video extraction tiers can
+land later without touching callers. Party attribution stops depending on
+what a specific export happens to print.
+

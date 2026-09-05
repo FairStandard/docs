@@ -1,0 +1,19 @@
+---
+title: "Packs are versioned, immutable content"
+description: "Ruled 2026-08-30 as part of the FS-894 build. A pack version, once published, is never updated or deleted. Publishing a new version is the only write door…"
+---
+
+Ruled 2026-08-30 as part of the FS-894 build. A pack version, once
+published, is never updated or deleted. Publishing a new version is the
+only write door this service exposes — there is no edit endpoint and no
+delete endpoint, on purpose. Anything currently depending on a pack
+version can trust that it will read the same content forever; anything
+that wants a change publishes a new version and adopts it at its own pace,
+by reading `current` again or by pinning a version number.
+
+The next version number is assigned by the store, not the caller (`Store.publish`
+in `store.py`), the same pattern evidence-api uses for its audit chain: two
+publishers racing for the same practice area both compute the same next
+version, and the unique `(practice_area_key, version)` constraint makes the
+loser retry instead of forking the sequence.
+

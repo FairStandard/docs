@@ -1,0 +1,76 @@
+---
+title: "deadlines-api"
+sidebarTitle: "Overview"
+description: "The FairStandard deadline-intelligence engine. Deadlines are computed from law (rule content) and case events, chained and conditional, and propose themselves…"
+---
+
+The FairStandard deadline-intelligence engine. Deadlines are computed
+from law (rule content) and case events, chained and conditional, and
+propose themselves unprompted; a proposed deadline is accepted or
+dismissed and then tracked with urgency computed at read time. Own
+Postgres, own service, workspace-scoped throughout.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push and
+pull request. Tests spin up a real Postgres via testcontainers (Docker
+required locally).
+
+## Architecture
+
+- `engine.py` — the deterministic rule engine: `evaluate(rule_set,
+  events, now)` reads no clock and produces the same proposals for the
+  same inputs, every time. Rule content types (`DeadlineRule`, `Offset`,
+  `Condition`, `EventTrigger`, `RuleTrigger`, `Calendar`, `RuleSet`) and
+  the `CaseEvent`/`Proposal` shapes live here too.
+- `models.py` / `store.py` — the one table, `Deadline`, and the store
+  behind it: `propose_for_case` (runs the engine, persists idempotently),
+  `accept`/`dismiss`, `list_by_case`/`list_by_workspace` with urgency.
+  Every query scoped by `workspace_id`.
+- `case_reader.py` — the `CaseReader` seam to case-api's docket (ADR
+  0003). `HttpCaseReader` speaks case-api's real internal API through
+  servicekit's doorway contract; `FakeCaseReader` backs it for tests.
+- `state_law_reader.py` — the `StateLawReader` seam to state-law-api's
+  deadline rules (ADR 0002, same pattern as case-api's CaseReader).
+  `HttpStateLawReader` speaks state-law-api's real
+  `GET /v1/deadline-rule-sets/{jurisdiction}/{practice_area}` through
+  servicekit's doorway contract and maps an unpublished rule-set's `404`
+  to an honest empty rule set; `FakeStateLawReader` keeps the same
+  promise in memory for tests.
+- `main.py` — the internal HTTP surface, workspace-scoped by the
+  `X-Workspace-Id` header: propose, accept, dismiss, get, list-by-case,
+  list-by-workspace.
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Out of scope this wave
+
+Re-evaluating a chain when its parent deadline is accepted, dismissed,
+or its due date changes (chains materialize once, at propose time — see
+ADR 0002). A cached/stale fallback when case-api is unreachable. The
+calendar UI itself (a later slice on another service).
+
+## Status
+
+Propose, accept, dismiss, and both list doors are built and
+workspace-scoped. `StateLawReader` is wired to the real
+`HttpStateLawReader` against state-law-api's deadline-rules surface
+(`DEADLINES_STATE_LAW_API_URL`) — proposing on a (jurisdiction,
+practice_area) state-law-api hasn't published for still proposes
+nothing, honestly, rather than erroring.
+

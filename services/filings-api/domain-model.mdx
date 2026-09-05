@@ -1,0 +1,98 @@
+---
+title: "Domain model"
+description: "The court WORKFLOW service: every filing a case needs, guided from a recommendation through drafting to service, tracked with honest status and honest…"
+---
+
+The court WORKFLOW service: every filing a case needs, guided from a
+recommendation through drafting to service, tracked with honest status
+and honest provenance. It does not hold the case record itself
+(case-api owns that), the documents it produces (document-creation-api
+renders them), the deadlines a filing creates (deadlines-api computes
+and tracks them), the statutes behind a recommendation (state-law-api),
+or practice-area configuration (packs-api).
+
+## Language
+
+**Filing**: One filing on a case — a title, a filing type, a lifecycle
+status, the guided-pass state it is currently in, a pointer to its
+document-creation draft (never the rendered bytes themselves), and the
+obligation facts it announced once filed. Never a bare "document" —
+a filing carries its workflow state, not just its content.
+_Avoid_: document (bare), pleading (bare — filing type is the registry
+string that carries this meaning)
+
+**Status**: Where a filing sits in its lifecycle — `draft`, `in-review`,
+`filed`, `served`, and so on — stored as a plain string, never an enum,
+same as every other extensible-registry field on the platform (canon
+locked-decisions.yaml, audience-vocabulary-extensibility). See ADR 0001.
+_Avoid_: state (bare)
+
+**Guided pass**: The current step of a filing's guided drafting flow —
+`current_pass` (a registry string naming which pass) plus `pass_blocks`
+(a list of `{block_id, complete}` facts for that pass). Filings-api
+stores this state; it does not own the pass definitions or prompt
+content that drive a pass forward — those are trade secret and live
+server-side, never echoed to a client-facing response. See ADR 0001.
+_Avoid_: phase (that word is case-api's for the case's own lifecycle;
+wizard step (implies a specific UI, not this service's own vocabulary)
+
+**Recommendation**: One deterministic, read-time output of the
+recommendation engine — a filing type, its title, and the reason a human
+reads for why it was suggested now. Never stored; recomputed on every
+request from case facts, docket, existing filings, and practice content
+(same reasoning as deadlines-api's urgency ADR 0001 — a stored
+recommendation goes stale the moment a docket event lands). See ADR 0001,
+engine.py.
+_Avoid_: suggestion, next step (bare)
+
+**Obligation**: A fact a filed document creates, announced as data —
+`{kind, due_basis}` — when a filing's status becomes `filed`. Filings-api
+computes and stores these facts from practice content; it does not
+compute an actual due date itself. deadlines-api is the one that turns
+`due_basis` content into a due date. See ADR 0004.
+_Avoid_: deadline (that is deadlines-api's own word for the computed,
+dated obligation)
+
+**ServiceRecord**: One record of a filing being served on a party —
+who it was served on, the method, when, and an optional proof reference.
+Workspace-scoped like every other row in this store.
+_Avoid_: proof of service (bare — that is one possible `proof_ref`, not
+the record itself)
+
+**CaseFacts / DocketEvent**: The normalized case-level facts and docket
+events the recommendation engine reasons over, sourced through
+CaseReader. Deliberately this service's own types, not a re-export of
+case-api's or deadlines-api's shapes — coupling this engine's contract to
+another service's module would make a a change there silently ripple
+here. See ADR 0002, case_reader.py.
+_Avoid_: docket entry (case-api's own word for the same fact before
+normalization)
+
+**CaseReader**: The seam to case-api's case record and docket. A
+`Protocol` with two methods (`get_case_facts`, `list_docket`);
+`HttpCaseReader` speaks case-api's real internal API through servicekit's
+doorway contract, `FakeCaseReader` backs it for tests. See ADR 0002.
+_Avoid_: case client
+
+**PacksReader**: The seam to packs-api's practice content — every
+practice-area-specific recommendation and obligation rule is content
+read through here, never hardcoded. A `Protocol` with one method
+(`get_current_sections`); packs-api is shared platform configuration, so
+this call carries no X-Workspace-Id. See ADR 0002.
+_Avoid_: rule client, config service
+
+**DocumentCreationReader**: The seam to document-creation-api's
+rendering engine. A filing draft hands its blocks to document-creation
+through `create_draft`, which calls document-creation's real
+`POST /internal/drafts` door — never its `/internal/templates` door,
+since templates are ruled to live inside filings, not document-creation.
+Filings-api stores the returned draft id (workflow state), never
+rendered bytes. See ADR 0003.
+_Avoid_: renderer, doc client
+
+**Workspace**: The tenant boundary every row in this store carries.
+Every store method takes `workspace_id` first and filters every query on
+it; a row from another workspace does not surface, not even as a 403 —
+it is a 404, because it does not exist as far as the query is concerned.
+_Avoid_: tenant (bare), org
+

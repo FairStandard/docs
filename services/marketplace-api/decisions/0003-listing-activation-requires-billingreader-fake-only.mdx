@@ -1,0 +1,93 @@
+---
+title: "3. Listing activation requires a subscription reference; BillingReader is Fake-only"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Canon (cap-marketplace.yaml) rules that the org pays a listing fee.
+Concretely, that means a listing should not go `active` — visible on
+the public directory — without a live subscription behind it.
+billing-payments-api, the service that will own subscription state,
+has not built a subscription-read door as of this wave (it is scoped
+for a later wave in the platform's build order).
+
+Two shapes were considered for `POST /internal/listings/{id}/activate`:
+
+1. **Skip the billing check entirely this wave** — let any listing
+   activate, and add the check later once billing-payments-api's door
+   exists.
+2. **Name the seam now** (`BillingReader`, a `Protocol`) and enforce it
+   on every activation, backed by `FakeBillingReader` — the same
+   `Protocol` + `Fake` pattern entitlements-api's `IdentityReader` uses
+   for a real seam.
+
+Skipping the check would mean shipping a listing-activation door whose
+behavior silently changes (gets *more* restrictive) the moment
+billing-payments-api's door appears — a worse migration than building
+the constraint now against a Fake.
+
+## Decision
+
+`billing_reader.py` defines `BillingReader` (`Protocol`, one method:
+`has_active_subscription(subscription_ref: str) -> bool`) and
+`FakeBillingReader` (an in-memory set of active refs). There is no
+`Http` implementation — billing-payments' subscription home isn't built
+yet, recorded honestly rather than stubbed out with a fake HTTP call to
+a door that doesn't exist.
+
+`store.activate_listing` calls `BillingReader.has_active_subscription`
+before flipping a listing's `status` to `active`; failing that check
+raises `BillingNotActive`, surfaced by `main.py` as `402 Payment
+Required`. `main.py`'s lifespan wires `FakeBillingReader()` (empty by
+default — nothing activates until a test or a future admin tool seeds
+an active ref into it).
+
+## Consequences
+
+Every listing in this service, in every environment until
+billing-payments-api ships its subscription-read door, requires
+whoever operates it to seed `FakeBillingReader.active_refs` themselves
+(a test fixture, or a startup script) — there is no real billing
+enforcement possible yet, only the shape of the enforcement. When
+billing-payments-api's door exists, `HttpBillingReader` is a new class
+satisfying the same `Protocol`; `store.py`'s `activate_listing` and the
+`402` contract on `POST /internal/listings/{id}/activate` do not change.
+
+## Addendum (2026-08-30): the seam is real now, two adapters
+
+billing-payments-api shipped its subscription-read door this wave:
+`GET /subscriptions/lookup/active`, `X-Workspace-Id` header,
+`subscribed_ref` query param, `{"subscribed_ref", "has_active_
+subscription"}` body. `billing_reader.py` now has two adapters against
+the one `BillingReader` `Protocol`:
+
+- `HttpBillingReader` — speaks that real door through servicekit's
+  doorway contract (retry-with-jitter, `Rejected`/`Unavailable` error
+  family), the same pattern deadlines-api's `CaseReader` and
+  entitlements-api's `IdentityReader` use.
+- `FakeBillingReader` — unchanged in memory shape, still used by every
+  test and by anything that wants to seed activation state without a
+  live billing-payments-api.
+
+`BillingReader.has_active_subscription` gained a `workspace_id`
+parameter (billing-payments-api's door is workspace-scoped, like every
+other door on that service) — `store.activate_listing` already had
+`workspace_id` in scope, so this is a one-line call-site change, not a
+new capability. The `402` contract on
+`POST /internal/listings/{id}/activate` is unchanged.
+
+`main.py`'s lifespan now wires `HttpBillingReader` against
+`Settings.billing_api_url` (env `MARKETPLACE_BILLING_API_URL`,
+default `http://localhost:8000`) instead of `FakeBillingReader` — real
+billing enforcement is live in every environment that points that
+setting at a running billing-payments-api. `tests/test_billing_reader.py`
+contract-tests `FakeBillingReader` and `HttpBillingReader` against the
+same ref/workspace pairs so the two adapters cannot drift.
+

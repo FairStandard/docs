@@ -1,0 +1,39 @@
+---
+title: "5. Stand-in roles until identity-api"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Superseded by [0006](/services/messaging-api/decisions/0006-identity-swap-real-verify-and-registry) —
+identity-api now exists and serves both the caller's case relationship
+and the relationship vocabulary as real data. See that ADR for what
+changed and why.
+
+## Context
+
+Litigant and attorney roles, and who belongs to which case, will be owned
+by identity-api — which is not carved yet. Blocking this service on that
+carve would stall the feature; Christopher ruled: build now with a
+stand-in.
+
+## Decision
+
+Every route is workspace-scoped by X-Workspace-Id and reads the caller's
+CASE RELATIONSHIP from an X-Case-Relationship header — the four-axis
+audience value the platform canon stores on the case-team record
+(personas never gate capability access; what this service checks is flow
+STRUCTURE: the parties to a case send context, their representing
+professional receives it). The relationship vocabulary is an extensible
+registry seeded with the canon's values, never a closed enum. Nobody
+reads excluded content. Identity-api replaces the header's SOURCE later —
+the checks themselves do not move.
+
+## Consequences
+
+The relationship checks are real and tested from day one — including
+full parity for self-represented parties — and swapping in identity-api
+changes where the relationship comes from, not what the service permits.
+

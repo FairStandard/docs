@@ -1,0 +1,69 @@
+---
+title: "2. Layered format detection"
+description: "Date: 2026-08-30"
+---
+
+> Ported from intake-api's ADR 0007 when detection moved into this
+> repo (files-api ADR 0001 superseded intake's parsers-live-inside-
+> intake decision). The probe evidence and ruling below are the
+> original record; detection.py cites this file now.
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+The hand-rolled magic-byte table covered only the formats the platform
+had met. The 2026-08-30 detector ruling adopted battle-tested libraries:
+Magika (Google's ML detector) with python-magic (libmagic) as backstop.
+A fixture probe before building changed the shape of the adoption:
+Magika confidently mislabeled degenerate media bytes (a minimal M4A as
+text at 0.93, an MP3 frame as a bitmap at 0.96) while the byte
+signatures are exact on those same formats — and Magika's label table
+has no M4A or HEIC entry at all. Magika's real win is the signatureless
+formats (CSV, plain text) and long-tail coverage. Christopher amended
+the ruling: layer it.
+
+## Decision
+
+`detection.py` answers "what kind of file is this" in tiers, each only
+answering what it is actually good at:
+
+1. Domain prefixes (RSMF) — ours, no library knows them.
+2. Exact byte signatures — PDF, ZIP, WAV, MP3, JPEG, PNG, HEIC/HEIF,
+   M4A/M4B/M4P, MP4. Deterministic and precise; never overruled.
+3. Magika, accepted only at score ≥ 0.80, mapped into our format
+   vocabulary — this is where CSV and plain-text detection from bytes
+   comes from.
+4. python-magic, only when the system's libmagic is installed; its
+   absence degrades gracefully to "unknown", never to a crash.
+
+The semantic layer (intake-api's classification.py) is unchanged and
+imports this package's detector instead of owning one.
+
+## Consequences
+
+Documented before/after (the ruling asked for behavior deltas, not byte
+parity):
+
+- CSV and plain-text bytes: was "unknown", now "csv"/text detection via
+  Magika — extension no longer required.
+- M4A bytes: was "mp4", now "audio" (ftyp brand check). The classify
+  golden moved with it: `recording.m4a` is `call_recording`/audio/0.7
+  instead of `ofw_call_recording`/mp4/1.0 — both map to the same
+  canonical CALL_RECORDING doc type, so downstream behavior is
+  unchanged.
+- M4B and M4P bytes (audiobook and protected-audio siblings of M4A) and
+  the `heif` brand (sibling of `heic`): also moved from the generic mp4
+  bucket to audio/image — deliberate additions riding the same brand
+  checks, each pinned by a sample test.
+- Every other fixture: identical before and after.
+
+Explicit sample tests pin M4A and HEIC (the two formats Magika cannot
+name) to the signature tier. Deployments that want the backstop must
+install libmagic (`apt-get install -y libmagic1`); nothing breaks where
+it is missing.
+

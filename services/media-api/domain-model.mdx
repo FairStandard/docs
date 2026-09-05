@@ -1,0 +1,61 @@
+---
+title: "Domain model"
+description: "The language of this service. One meaning per term; avoid-lists keep the platform's shared vocabulary consistent."
+---
+
+The language of this service. One meaning per term; avoid-lists keep the
+platform's shared vocabulary consistent.
+
+**Recording**:
+One audio (or audio-bearing video) file under analysis — an OFW call, a
+voice memo, an iMessage voice message, a voicemail. Identified by its
+content hash; the bytes live in the evidence store.
+_Avoid_: media file, asset, clip
+
+**Transcript**:
+The word-level text of a Recording with timing, produced by the
+transcription model and attributed to speakers.
+_Avoid_: caption, subtitles
+
+**Diarization**:
+Splitting a Recording's timeline into who-spoke-when segments, before
+anyone is named.
+_Avoid_: speaker detection, segmentation (bare)
+
+**Speaker**:
+A person on a Recording, resolved from diarized segments — first as an
+anonymous track, then enrolled to a named party. Children are never
+auto-enrolled.
+_Avoid_: voice, participant
+
+**Baseline**:
+A speaker's normal — running averages of emotion, pitch, burst rate, and
+pace that deviations are measured against. Versioned, never silently
+rewritten.
+_Avoid_: profile, average (bare)
+
+**Measurement**:
+One scored observation on a Recording's timeline: an emotion vector, a
+vocalization, a prosody reading. Measurements are facts about audio,
+never conclusions about people — measurement, not opinion.
+_Avoid_: finding (analysis-api owns that word), score (bare)
+
+**Measurement store**:
+The service's own analytics database, holding every Measurement. Voice
+embeddings will live here too once the diarization stage that produces
+them is built — none are stored today. Owned by this service alone and
+read only through this service's API (ruling 2026-08-30) — nothing else
+connects to it.
+_Avoid_: warehouse, ClickHouse (the product name is an implementation
+detail)
+
+**Job**:
+One unit of pipeline work on one Recording (diarize, transcribe,
+vocalize, measure). Jobs are queued privately inside this service.
+_Avoid_: task, message
+
+**Workspace scoping**:
+Every read and write is filtered by the workspace first (X-Workspace-Id
+header), same as every other service here.
+_Avoid_: tenant, org
+

@@ -1,0 +1,88 @@
+---
+title: "Domain model"
+description: "The deadline-intelligence engine: every dated obligation on a case, computed from law and case events, proposed unprompted, and tracked with urgency until it…"
+---
+
+The deadline-intelligence engine: every dated obligation on a case,
+computed from law and case events, proposed unprompted, and tracked with
+urgency until it is done. It does not hold the case record itself
+(case-api owns that), the rules that produce a deadline (state-law-api
+owns and serves them — HttpStateLawReader is wired to its live surface),
+or the calendar UI (a later slice on another service).
+
+## Language
+
+**Deadline**: One dated obligation on a case — a title, a due timestamp,
+a status, and honest provenance: which rule produced it and which case
+event triggered it. Never a bare "due date" — a deadline carries the
+reasoning behind the date, not just the date.
+_Avoid_: due date, milestone
+
+**Status**: Where a deadline sits in its lifecycle — `proposed`,
+`accepted`, `dismissed`, or `done` — stored as a plain string, never an
+enum. A proposed deadline is the engine's unprompted output; a human
+accepts or dismisses it; an accepted deadline is later marked done —
+`done` is reserved vocabulary today: the model represents it, but no
+door writes it yet. See ADR 0001.
+_Avoid_: state (bare — status is the deadline's own lifecycle; urgency,
+below, is a different axis entirely)
+
+**Urgency**: How pressing a deadline is right now — `overdue`,
+`due_soon`, `on_track`, or `closed` — computed at read time from
+`due_at` against the clock, never stored. A stored urgency goes stale
+the moment time passes; the store recomputes it on every list. See ADR
+0001.
+_Avoid_: priority, severity
+
+**Chain parent**: The deadline that triggered a chained or conditional
+follow-on deadline (for example, a reminder five days before the parent
+deadline is due). Stored as `chain_parent_id`, resolved once both rows
+exist in the same propose call.
+_Avoid_: parent task, dependency
+
+**DeadlineRule**: One piece of rule content evaluated by the engine — a
+trigger (a case event kind, or another rule's own due date, for
+chaining), an offset (calendar-day or business-day arithmetic, before or
+after), and optional conditions (an equality check against the
+triggering event's fields). Rules are content, never hardcoded logic.
+See ADR 0002, engine.py.
+_Avoid_: policy, config
+
+**Calendar**: The business-day content for one rule-set — which
+weekdays count as business days and which specific dates are holidays.
+Part of the rule-set the StateLawReader supplies; never hardcoded into
+the engine. See ADR 0002.
+_Avoid_: schedule, holidays list (bare)
+
+**Proposal**: One deterministic output of the rule engine — not yet a
+database row. `evaluate(rule_set, events, now)` reads no clock and
+produces the same proposals for the same inputs, forever. See engine.py.
+_Avoid_: suggestion, recommendation
+
+**CaseEvent**: One normalized fact from the case (a docket entry's
+kind, when it happened, its result) — the shape both the Fake and Http
+CaseReader hand back to the engine. See ADR 0003, case_reader.py.
+_Avoid_: docket entry (that is case-api's word for the same fact before
+normalization)
+
+**CaseReader**: The seam to case-api's docket. A `Protocol` with one
+method (`list_events`); `HttpCaseReader` speaks case-api's real internal
+API through servicekit's doorway contract, `FakeCaseReader` backs it for
+tests. See ADR 0003.
+_Avoid_: case client, docket service
+
+**StateLawReader**: The seam to state-law-api's deadline rules — the
+same pattern as case-api's CaseReader. A `Protocol` with one method,
+`get_rule_set(jurisdiction, practice_area)`; `HttpStateLawReader` speaks
+state-law-api's real HTTP surface through servicekit's doorway contract
+and maps an unpublished rule-set's `404` to an honest empty rule set,
+`FakeStateLawReader` keeps the same promise in memory for tests. See
+ADR 0002.
+_Avoid_: rule client, law service
+
+**Workspace**: The tenant boundary every row in this store carries.
+Every store method takes `workspace_id` first and filters every query on
+it; a row from another workspace does not surface, not even as a 403 —
+it is a 404, because it does not exist as far as the query is concerned.
+_Avoid_: tenant (bare), org
+

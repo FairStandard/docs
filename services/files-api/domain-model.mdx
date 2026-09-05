@@ -1,0 +1,50 @@
+---
+title: "Domain model"
+description: "The language of this service. One meaning per term."
+---
+
+The language of this service. One meaning per term.
+
+**Format**:
+The byte-level container a file is made of (CSV, PDF, PNG, ...), decided
+by `detect_format` without looking at what the bytes mean. Deterministic
+classification of bytes, not a judgment call.
+_Avoid_: type (too broad — used for doc type too), mime type (an
+implementation detail of one detection tier, not the concept)
+
+**Doc type**:
+What kind of document this is by meaning (a call history CSV, an iMessage
+export, a calls report PDF...), decided by the caller before it asks this
+service to extract. This service does not decide doc type — that call
+stays with the caller, because it also has to decide things this service
+never sees (is this actually media that belongs to media-api instead of
+a document at all).
+_Avoid_: classification (that word, and the decision it names, belongs to
+the caller)
+
+**Processor**:
+One deterministic parser for one doc type, self-registered in the
+processor registry. Turns file bytes into records plus a report of how
+the parse went.
+_Avoid_: extractor (reserved for the AI escalation tier, which lives in
+the caller, not here)
+
+**Record**:
+One normalized fact a processor extracted (a call, a message), shaped for
+delivery to an evidence store this service never talks to.
+_Avoid_: item, entry
+
+**Verdict**:
+Whether an extraction should be trusted, computed the same way regardless
+of which processor produced it — does the record count match what the
+document claims, does every record carry its required fields.
+_Avoid_: result (too broad — ExtractResponse already covers "result")
+
+**Extraction tier**:
+Deterministic parsing is the only tier this service runs. A caller whose
+extraction comes back invalid decides on its own whether to escalate to
+an AI reader — that decision and that model call happen outside this
+service, always.
+_Avoid_: escalation (that word names a capability this service does not
+have)
+

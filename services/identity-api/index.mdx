@@ -1,0 +1,89 @@
+---
+title: "identity-api"
+sidebarTitle: "Overview"
+description: "FairStandard's identity service: accounts, organizations, membership, case teams, and the audience registries — served as data. See CONTEXT.md for the…"
+---
+
+FairStandard's identity service: accounts, organizations, membership,
+case teams, and the audience registries — served as data. See
+[CONTEXT.md](/services/identity-api/domain-model) for the vocabulary and [docs/adr](https://github.com/FairStandard/identity-api/blob/main/docs/adr) for
+why it's shaped this way.
+
+## What it owns
+
+- **Accounts** (`User`) — one person's login.
+- **Organizations** — the paying customer, always. Carries jurisdiction
+  and pro-bono status.
+- **Membership** — N:M between accounts and organizations, with an org
+  role (owner/attorney/staff/provider) that lives on the membership, not
+  the account.
+- **Case teams** — how an account is positioned on one case
+  (representing_professional/represented_party/self_represented_party/
+  external_participant), separate from org role because the same person
+  can hold different case relationships on different cases.
+- **Registries** — org role and case relationship are extensible
+  vocabularies stored as data, not closed enums. `POST
+  /internal/registries/{name}` adds a value; nothing else changes.
+- **Sessions** — a JWT access token plus a revocable, hashed session
+  row. `/internal/verify` checks both.
+
+## Setup
+
+```bash
+uv sync --dev
+uv run pytest -q
+```
+
+Tests spin up real Postgres via testcontainers (Docker required) — no
+mocks for the database.
+
+## Running
+
+```bash
+uv run fastapi dev main.py
+```
+
+Configuration is environment-driven under the `IDENTITY_` prefix (see
+`settings.py`): `IDENTITY_DATABASE_URL`, `IDENTITY_JWT_SECRET`,
+`IDENTITY_JWT_ALGORITHM`, `IDENTITY_JWT_EXPIRATION_HOURS`.
+
+## The internal HTTP surface
+
+| Route | What it does |
+| --- | --- |
+| `POST /internal/register` | Create an account. |
+| `POST /internal/login` | Password check; issues a JWT and a session row. |
+| `POST /internal/logout` | Deletes the session row — revokes the token immediately. |
+| `GET /internal/verify` | The endpoint other services call instead of trusting a stand-in header. Returns the account, its active memberships, and its case relationships. |
+| `POST /internal/organizations` | Create an org; the creator becomes its owner. |
+| `POST /internal/organizations/{id}/members` | Add or re-invite a member (org role validated against the registry). |
+| `DELETE /internal/organizations/{id}/members/{user_id}` | Remove a member (soft — sets `removed_at`). |
+| `POST /internal/case-team` | Assign a case relationship (validated against the registry). Scoped by `X-Workspace-Id`: re-assigning in the same workspace updates the seat; a seat held in another workspace is a 409, never a silent move. |
+| `GET /internal/registries/{name}` | Read a registry's current values. |
+| `POST /internal/registries/{name}` | Extend a registry with a new value. |
+
+## Architecture
+
+- `models.py` — the tables (accounts, sessions, orgs, membership, case
+  teams, the two registries). Table names come from the class names.
+- `auth.py` — pure functions: password hashing, JWT create/decode, token
+  hashing. No database access.
+- `store.py` — the only place that touches Postgres. Every org- or
+  case-scoped query filters by that id first; there is no row-level
+  security (see CONTEXT.md, "Workspace scoping").
+- `main.py` / `settings.py` — the FastAPI app and its configuration.
+
+## Testing philosophy
+
+Every test runs against a real Postgres container, not a mock. `auth.py`
+is pure enough to unit-test without any database at all. The suites
+build their schema with `create_all` for speed; `tests/test_migrations.py`
+runs the real alembic chain (upgrade to head, compare against the models
+column-for-column, downgrade to base) so a drifted or broken migration
+fails in CI, not in production. The
+extensibility proof (`test_registry_extension_makes_a_formerly_unknown_value_valid`
+in both `tests/test_store.py` and `tests/test_api.py`) is the test that
+matters most: it shows a case relationship the service has never heard
+of gets rejected, then accepted the moment it's inserted into the
+registry — no deploy required.
+

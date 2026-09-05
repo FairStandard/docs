@@ -1,0 +1,79 @@
+---
+title: "1. A dedicated files service"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Deterministic extraction — format detection and per-doc-type container
+parsing — ran inside intake-api as one deep module with one caller. A
+same-day seam analysis (`intake-api/docs/adr/0001-parsers-live-inside-intake.md`,
+and `repositories/scratch_pads/files-service-seam-analysis.md`) recommended
+against splitting it out, on the deletion test: single caller, no second
+caller named anywhere, and a network hop inserted in the middle of one
+in-process call graph (`classify -> processor -> validate -> [escalate] ->
+validate`) for no behavioral gain.
+
+The 2026-08-30 platform slicing ruling overrode that recommendation:
+deterministic extraction becomes its own service now, ahead of a second
+caller existing, as part of carving the platform into six services with
+their own Postgres and private queues. This ADR records the split and
+supersedes intake-api's ADR 0001.
+
+The seam analysis's objections are on the record here because they are
+still correct as far as they go — they describe a real cost (a network
+hop where there was a function call) traded for a real benefit (an
+extraction capability that stops being intake's private implementation
+detail the moment a second caller — a reprocessing job, a second intake
+kind, another service that needs container parsing — actually shows up).
+
+## Decision
+
+files-api owns format detection (byte-level, `detect_format`), container
+parsing (per-doc-type processors: call-history CSV, calls-report PDF,
+iMessage export PDF, messages-report PDF), and self-validation of what a
+processor extracted (ADR 0004, ported from intake). It never decides doc
+type — the caller does that (today, intake's classifier) because the
+caller needs that decision for things files-api never sees, like routing
+media away from document parsing entirely.
+
+Model reasoning stays OUT. The AI extraction escalation tier
+(`parsers/escalation.py`, an `Extractor` that hands a document to Claude
+when deterministic parsing fails validation) stays in intake. files-api
+never calls a model — Magika's format-scoring in `detect_format` is
+deterministic classification of bytes, not model reasoning, and stays.
+
+files-api has no store and no workspace scoping. It is pure computation
+over bytes a caller already owns — nothing here persists, so there is
+nothing here to scope by workspace.
+
+The HTTP door is two operations, not one, because callers need format
+detection before they can decide doc type, and doc-type-aware extraction
+after: `POST /v1/detect` and `POST /v1/extract`. Both are synchronous —
+detection and parsing are CPU-only with no external I/O to wait on, so
+there is nothing for a queue to buy on that path.
+
+A `servicekit` `StreamQueue` (`FilesQueue`, `files_queue.py`) is wired for
+one job: publishing a `FilesJob` audit event per completed extraction, for
+a downstream consumer that wants to know an extraction happened without
+polling. It is not on the extraction path itself.
+
+## Consequences
+
+Extraction can now be called by something other than intake without
+duplicating ~1,600 lines of parser code and their golden-parity tests.
+The cost the seam analysis named is real and paid: every extraction now
+crosses an HTTP boundary intake's engine used to cross in-process,
+wrapped in the doorway's `Unavailable`/`Rejected` error family instead of
+a plain exception.
+
+Party resolution (`intake-api/parties.py`) stays in intake, unmoved —
+files-api's records are unresolved; intake resolves parties after
+delivery, using case/workspace context files-api never has.
+

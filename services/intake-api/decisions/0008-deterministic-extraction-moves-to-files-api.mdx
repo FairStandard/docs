@@ -1,0 +1,140 @@
+---
+title: "8. Deterministic extraction moves to files-api"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted. Supersedes ADR 0001 ("The parsers live inside intake").
+
+## Context
+
+ADR 0001 ruled the parser fleet stays inside intake because parsing had
+exactly one caller, and pulling it out later would cost the same then as
+now. A same-day seam analysis
+(`repositories/scratch_pads/files-service-seam-analysis.md`) re-ran that
+deletion test and reached the same conclusion: no second caller was named
+anywhere in the platform's five services, and splitting `classify ->
+processor -> validate -> [escalate] -> validate` across a network
+boundary would cost latency and a new error taxonomy for no behavioral
+gain.
+
+The 2026-08-30 platform slicing ruling (FS-887) overrode both — the
+deletion test's answer doesn't change, but the ruling makes the trade
+deliberately: deterministic extraction becomes its own service NOW, as
+part of carving the platform into six services with their own Postgres
+and private queues, ahead of a second caller actually existing. This ADR
+records what moved, what stayed, and the costs that are now real that
+the seam analysis warned about (they're accepted, not disputed).
+
+## Decision
+
+`detection.py` and the deterministic parser fleet (`parsers/`: call
+history CSV, calls report PDF, iMessage export PDF, messages report PDF,
+identity, validation) moved to a new service, files-api, unchanged. See
+files-api's own ADR 0001 for what it owns.
+
+**What stayed, and why:**
+
+- **`escalation.py`** (the AI extraction tier) stays in intake. Model
+  reasoning is explicitly out of scope for files-api — Claude calls and
+  their spend stay owned here.
+- **`classification.py`** stays in intake, unmoved, because engine.py
+  needs its routing decision (document vs. media, which processor)
+  *before* it knows whether to call files-api at all, and `classify()` is
+  a synchronous, golden-parity-pinned pure function on the hot path of
+  every ingest.
+- **A private copy of `detection.py`** (renamed `_detection.py`, leading
+  underscore, not imported outside `classification.py`) stays in intake
+  for `classify()` to call. Splitting `classify()`'s one call to
+  `detect_format` into a network round trip would mean either an `await`
+  in the middle of a pure function's golden-parity contract, or sending
+  file bytes to files-api twice per file (once to classify, once to
+  extract) — the exact cost the seam analysis named. Duplication (~130
+  lines, kept in sync by hand) was the deliberate trade instead. Both
+  copies are pinned by their own golden-parity tests, so drift shows up
+  as a test failure on whichever side goes stale first.
+- **A local copy of `identity.py`'s two hash formulas** (`call_identity`,
+  `imessage_identity`) stays, because `escalation.py` needs them to build
+  a `content_hash` for AI-extracted records, and escalation can't import
+  files-api's package (a separate repository).
+- **A local copy of the self-validation rule** (`extraction.py`, ported
+  from `parsers/validation.py`) stays, because `escalation.py`'s own
+  output needs the same check files-api runs on its deterministic tier,
+  and files-api's verdict on its own tier already comes back as part of
+  its response — intake never re-validates that half.
+
+**The new seam:** `files_reader.py`, an HTTP doorway to files-api
+(`FilesReader` protocol, `HttpFilesReader`, `FakeFilesReader`) — the same
+shape as `evidence.py`'s doorway to evidence-api and messaging-api's
+`upstream.py` doorways. Unlike every call to evidence-api, calls to
+files-api carry no `X-Workspace-Id` header — files-api has no workspace
+scoping (its own ADR 0001).
+
+`engine.py._extract` now calls `FilesReader.extract()` instead of
+`get_processor(doc_type)(...)` in-process. A `FilesReaderError` (files-api
+unreachable, or no processor registered for the doc type) is treated the
+same way a `processor is None` result used to be treated: escalation gets
+a chance before the import is flagged.
+
+## Consequences
+
+Every extraction now crosses an HTTP boundary intake's engine used to
+cross in-process. That cost is real and was already named before this
+ADR — it's accepted as the price of extraction being independently
+callable, not discovered after the fact.
+
+Two small, deliberate duplications now exist between intake and
+files-api: byte-level format detection, and the two identity hash
+formulas escalation needs. Both are documented at their point of
+duplication (`_detection.py`, `identity.py`) with the reason and the
+fact that each side is independently golden-parity tested, so a drift
+shows up as a test failure rather than silent divergence.
+
+Party resolution (`parties.py`) stays in intake, unmoved — files-api's
+records are unresolved; intake resolves parties after delivery, using
+case/workspace context files-api never has.
+
+## Addendum (2026-08-30, FS-887 follow-up): the three duplications are gone
+
+The three hand-synced copies named above turned out to be an unforced
+cost, not a real one. files-api was restructured into an installable
+package (`src/files_api/`, same `uv_build` shape as `servicekit`) with a
+stable in-process import surface. intake now depends on files-api the
+same way it depends on servicekit — a pinned git revision in
+`[tool.uv.sources]` — and imports the pure functions directly:
+
+- `classification.py` now imports `detect_format` and `FormatName` from
+  `files_api` instead of the private `_detection.py` copy, which is
+  deleted. `classify()` is still fully synchronous and still
+  golden-parity-pinned — importing a pure function in-process costs
+  nothing an in-repo module didn't already cost. The worry that killed
+  this idea the first time (an `await` in the middle of a pure function,
+  or two network round trips per file) never applied to an in-process
+  import; it only applied to the HTTP doorway, which this addendum does
+  not touch.
+- `escalation.py` now imports `call_identity` and `imessage_identity`
+  from `files_api` instead of the local `identity.py` copy, which is
+  deleted.
+- `extraction.py`'s local `validate`, `Verdict`, and `claimed_count` are
+  deleted; it re-exports the same names from `files_api` instead.
+  `extraction.ParseResult` is now also `files_api.ParseResult` re-exported
+  under intake's existing import path, rather than a second dataclass of
+  the same shape — the ADR 0008 reason for keeping it separate ("so
+  intake never imports files-api's package") no longer holds once intake
+  depends on the package directly.
+
+**What this does not change:** `files_reader.py`'s HTTP doorway is still
+how `engine.py._extract` calls files-api for the actual extraction work.
+Only the three pieces of pure, synchronous logic that had been
+hand-duplicated moved to an in-process import — the pipeline itself is
+still a real HTTP call, for the reasons this ADR already gave (a caller
+that owns extraction independently, not a network hop intake's engine
+used to avoid).
+
+Every intake golden-parity test that pinned this behavior passed
+unchanged — the duplication was removed by import wiring, not by
+changing what any function does.
+

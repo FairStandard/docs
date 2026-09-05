@@ -1,0 +1,78 @@
+---
+title: "marketplace-api"
+sidebarTitle: "Overview"
+description: "The attorney/provider directory: org-scoped listing and profile management, a public discovery read with no tenant at all, and a consultation-request queue…"
+---
+
+The attorney/provider directory: org-scoped listing and profile
+management, a public discovery read with no tenant at all, and a
+consultation-request queue that hands accepted matches off to the rest
+of the platform. Own Postgres, own service.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev
+```
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push
+and pull request. Tests spin up a real Postgres via testcontainers
+(Docker required locally).
+
+## Architecture
+
+- `models.py` — six tables: `Listing` (org-scoped, billed presence),
+  `Profile` (the social profile, 1:1), `Specialty`/`ServiceKind` (open
+  vocabularies, seeded as data), `ConsultationRequest` (the queue),
+  `ConsultationHandoff` (the durable fact of an accepted request).
+- `registry_seed.json` / `registries.py` — the starter specialty and
+  service-kind vocabulary; extension is an insert, never a code change.
+- `store.py` — the orchestration layer behind five doors: listing
+  manage, profile manage, public discovery, consultation request, and
+  the consultation queue (list/accept/decline).
+- `billing_reader.py` — the `BillingReader` seam to billing-payments-api
+  (ADR 0003): `HttpBillingReader` against the real subscription-read
+  door, `FakeBillingReader` for tests.
+- `handoff.py` — the three seams an accepted request hands off to
+  (ADR 0002): `IdentityHandoff`, `CaseHandoff`, `MessagingHandoff`, each
+  `Protocol` + `Fake` only.
+- `search_facts.py` / `search_publisher.py` — the IndexFact producer
+  (ADR 0004): active public listings publish to search-api's index
+  stream; visibility is status-driven, and a delisted listing's fact is
+  removed.
+- `main.py` — the HTTP surface. Listing/profile/queue doors are
+  workspace- and org-scoped by `X-Workspace-Id`; `GET /public/listings`
+  and `POST /public/listings/{id}/requests` take no workspace header at
+  all (CONTEXT.md, "Public discovery has no tenant").
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Out of scope this wave
+
+Full-text discovery (ranked relevance, typo tolerance) — filtered
+exact-match lookups against this service's own Postgres are enough for
+today's small, curated marketplace; search-api owns full-text discovery
+later (ADR 0001). Real identity/case/messaging
+handoffs on consultation accept — all three are `Fake`-only until their
+receiving doors exist (ADR 0002).
+
+## Status
+
+Listing/profile manage, public discovery, the consultation queue
+(request/list/accept/decline), and search-index publishing are built
+and tested. The billing seam is real: `HttpBillingReader` reads
+billing-payments-api's live subscription door (ADR 0003 addendum). The
+three handoff seams (identity, case, messaging) remain `Protocol` +
+`Fake` by design until their receiving doors exist (ADR 0002).
+

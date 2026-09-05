@@ -1,0 +1,42 @@
+---
+title: "3. The payment provider is a Protocol and a Fake, not a real processor"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Recording that an invoice was paid needs a seam: the caller (a door, a
+retainer draw) shouldn't need to know whether the payment came from a
+real card processor, a bank transfer reconciliation, or — as in this
+land — nothing real at all. Wiring in a real processor's SDK (Stripe,
+LawPay, etc.) is a separate, larger decision this land is not making:
+it needs a provider choice, credentials, PCI-scope handling, and its
+own doorway (servicekit's retry/error contract). None of that exists
+yet, and charging a card is explicitly out of scope for this land.
+
+## Decision
+
+`payments.py` defines `PaymentProvider` as a `Protocol` with one method,
+`record_payment`, returning a `PaymentReceipt`. The only implementation
+shipped is `FakePaymentProvider`, which always succeeds and returns a
+synthetic reference. `Store.mark_invoice_paid_externally` and the
+`/invoices/{id}/pay` door depend on the Protocol, not the Fake, so
+swapping in a real processor later means adding one new class and
+changing the one line that constructs it in `main.py`'s lifespan —
+nothing else in the service changes shape.
+
+## Consequences
+
+This land can exercise the full "invoice paid externally" path in tests
+and in the doors without a real payment integration existing. The
+consequence is that `/invoices/{id}/pay` with `source: "external"` does
+not actually move money yet — it only records that a payment happened,
+which the door's behavior and this ADR both need to keep saying plainly
+until a real provider lands.
+

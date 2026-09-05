@@ -1,0 +1,68 @@
+---
+title: "6. Time-entry approval and locking follow the ledger's reversing-entry doctrine"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+`TimeEntry.status` already carried the full lifecycle vocabulary
+(`captured`, `submitted`, `approved`, `locked`, `invoiced`, `void`) as
+data from the first land, with a note that only `captured` was written
+yet. This land builds the doors that make the rest of that lifecycle
+real, and answers two questions the vocabulary alone didn't settle:
+
+- What does "approved" record, beyond a status string? A firm needs to
+  know *who* approved a block of time and *when*, the same way every
+  `LedgerEntry` names what caused it.
+- What happens when a locked entry turns out to be wrong? The ledger
+  (ADR 0002) never edits a written row — a correction is always a new
+  row. Should time entries work the same way, or is a lighter rule (an
+  UPDATE with an audit column) good enough here?
+
+## Decision
+
+Approval provenance is two columns, not a log line: `approved_by` and
+`approved_at` on `TimeEntry` itself, written once by
+`Store.approve_time_entry` and never touched again.
+
+Locking is the immutability boundary: `Store.lock_time_entry` sets
+`locked_at`, and after that no store method ever mutates that row's
+substantive fields (`duration_seconds`, `work_kind`, `billable`, ...)
+again. A mistake found after locking is corrected exactly the way a
+`LedgerEntry` mistake is corrected — a brand-new `TimeEntry` row,
+`correction_of_id` pointing at the one it corrects, `duration_seconds`
+carrying a *signed delta* (negative to remove billed time, positive to
+add some back) rather than an edit of the original. The correction
+starts its own `captured -> submitted -> approved -> locked` lifecycle
+like any other entry — a correction is itself billable work someone
+has to approve, not a silent adjustment.
+
+Invoicing may only consume a `TimeEntry` whose status is `"approved"`
+or `"locked"` (`Store._consume_time_entry` enforces this; the door
+returns 409 otherwise). Locked is included deliberately: locking only
+ever happens *after* approval, so a locked entry is an approved entry
+that additionally can no longer be corrected in place — it is never a
+weaker claim than "approved" alone. Once a line consumes an entry, the
+entry's status becomes `"invoiced"`; if that line is later removed
+(replacing a draft invoice's lines is the one place this happens), the
+entry reverts to `"locked"` if it had been locked or `"approved"`
+otherwise, so it's available to be invoiced again rather than stranded.
+
+## Consequences
+
+Every billed minute traces to a named approver and a timestamp, and a
+correction after locking is fully auditable from the entry history
+alone — the same property ADR 0002 gives the trust ledger, for the
+same reason. The cost is the same one ADR 0002 accepted: "fixing a
+mistake" always means writing one more row, and a caller summing
+billed time for a case has to sum corrections alongside originals
+rather than reading one always-current value. `record_time_entry` (the
+manual door and the automatic work-signal consumer) is unaffected —
+every entry, original or correction, still starts at `captured`.
+

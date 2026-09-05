@@ -1,0 +1,12 @@
+---
+title: "Evidence is its own service, owned by nobody's workflow"
+description: "Ruled 2026-08-30 under the endless-scaling standard: evidence — records, files, and the audit chain — gets a dedicated store rather than living inside the…"
+---
+
+Ruled 2026-08-30 under the endless-scaling standard: evidence — records,
+files, and the audit chain — gets a dedicated store rather than living
+inside the case service (would need prying out as it grows) or inside
+intake (would weld the upload flow's scaling to the archive's). Intake
+writes evidence once over this API; every other service reads it here. The
+door never moves again.
+

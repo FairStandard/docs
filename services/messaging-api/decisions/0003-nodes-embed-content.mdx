@@ -1,0 +1,30 @@
+---
+title: "3. Nodes embed their content"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+A Package's nodes could store live references resolved at read time, or
+copies of the content frozen at snapshot time. Christopher ruled: copy.
+
+## Decision
+
+Every node embeds the content it had at snapshot time, alongside the
+SAME content hash evidence-api already stores for that record or file —
+no second hashing scheme for the same bytes. Attorney-side verification
+re-fetches sources by reference and compares hashes, proving the copy
+still matches the permanent record.
+
+## Consequences
+
+A Package reads and verifies on its own, forever, without depending on
+any other service being up or unchanged. The cost is stored duplication,
+which is the point of a snapshot.
+

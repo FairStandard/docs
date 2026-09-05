@@ -1,0 +1,43 @@
+---
+title: "3. Emotion measurement sits behind a seam"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+Emotion scoring currently calls an external AI service; the platform's
+own emotion model is being trained to replace it. Porting the external
+integration as a permanent fixture would build the service around a
+dependency already scheduled to die.
+
+## Decision
+
+The pipeline talks to an EmotionScorer seam: today's adapter calls the
+external service; the custom model becomes a second adapter later. The
+measurement schema (48-emotion vectors, prosody, bursts, vocalizations)
+is OURS, defined by this service, not by the external provider's response
+shape — adapters translate into it.
+
+## Consequences
+
+Swapping the scorer never touches the store, the API, or the baselines.
+The schema outlives the provider.
+
+## Scope note (2026-08-30, scorer-pipeline slice)
+
+`scoring.py` ships the seam (`EmotionScorer`), the schema translation
+(`translate`, total over unknown emotion names — dropped and counted,
+never a crash, never a reorder), and a HumeScorer adapter shaped only
+loosely on the external batch API (submit, poll, translate). The real
+wire contract — auth, exact request/response shapes, timeouts tuned to
+the live service — is deployment-config wiring that lands separately,
+not part of this slice. Nothing downstream (the pipeline, the store, the
+API) depends on that wiring; it only depends on the `EmotionScorer`
+seam.
+

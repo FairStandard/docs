@@ -1,0 +1,47 @@
+---
+title: "practice_area is validated against packs-api's registry"
+description: "Ruled 2026-08-31 (Christopher), part of the pack-model correction. Full research trail: scratchpads/pack-seam-research.md,…"
+---
+
+Ruled 2026-08-31 (Christopher), part of the pack-model correction. Full
+research trail: `scratch_pads/pack-seam-research.md`,
+`scratch_pads/pack-seam-architecture.md`.
+
+## The drift risk this closes
+
+Before this ADR, `practice_area` on `DeadlineRuleSetVersion` and
+`ProcessDefinitionVersion` was a bare, unvalidated string — this
+service, packs-api, and learning-api each accepted whatever
+`practice_area` string a caller sent, with no shared source of truth.
+Nothing stopped `state-law-api`'s `deadline-rule-sets/publish` from
+accepting `practice_area="family_law"` while packs-api's pack for the
+same area is keyed `family-law` — an entirely plausible drift, not a
+hypothetical one.
+
+## The change
+
+`store.py`'s own module docstring said "this service never calls
+another service — it holds law, nothing else." That is no longer true:
+`publish_rule_set` and `publish_process_definition` — the two content
+types that carry `practice_area` — now call packs-api's practice-area
+registry (`GET /internal/practice-areas/{key}`) through a new
+`PacksReader` seam (`packs_reader.py`, same Protocol/Fake/Http pattern
+as `filings-api`'s reader and `case-api`'s `PacksReader`) before
+writing. An unregistered `practice_area` is rejected with a `422`
+(`UnknownPracticeAreaError`), never silently accepted.
+
+This is a real architectural addition, not a tweak — it is the first
+outbound HTTP call this service makes. It is scoped narrowly: only the
+two doors that carry `practice_area` call out; `court_level` on
+`CourtRuleSetVersion` and `jurisdiction` everywhere are unaffected,
+since neither is a packs-api concept.
+
+## What did not change
+
+- No schema change to any table — `practice_area` stays the same
+  `str` column it always was.
+- Statutes, court rules, holidays, and pro bono eligibility publish
+  doors are untouched; they never carried a `practice_area` field.
+- The versioned-partition idiom (ADR 0004) is unchanged; validation
+  happens before a publish attempt, not inside the retry loop.
+

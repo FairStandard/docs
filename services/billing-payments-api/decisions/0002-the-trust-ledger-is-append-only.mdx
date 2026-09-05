@@ -1,0 +1,49 @@
+---
+title: "2. The trust ledger is append-only; paying from retainer is one atomic transaction"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+A retainer account holds client trust funds. Every jurisdiction's trust
+accounting rules rest on the same property: you can always reconstruct
+exactly what happened to a client's money, in order, without anything
+having been silently changed after the fact. A ledger with UPDATE or
+DELETE paths cannot make that promise — a bug or a bad actor could
+rewrite history and there would be no way to tell.
+
+Separately, paying an invoice out of a retainer is a single legal event
+(draw the trust funds, mark the invoice paid) even though it is two
+database writes. If those writes could commit separately, a crash
+between them would either lose the client's funds (drawn but invoice
+still shows unpaid) or misstate money the firm doesn't have (invoice
+paid, but no trust funds actually moved).
+
+## Decision
+
+`LedgerEntry` rows are never updated or deleted anywhere in this
+service — `store.py` has no method that does either. A correction is
+always a new row: `reverse_ledger_entry` writes a reversing entry that
+carries `reversal_of_id` pointing at the entry it undoes; the original
+stays exactly as written. The account balance is never a stored column
+— it is `SUM(signed_cents)` over the account's entries, computed on
+every read, so the balance can never drift from the entries that are
+its only truth.
+
+`Store.pay_invoice_from_retainer` writes the draw `LedgerEntry` and
+flips the `Invoice.status` to `paid` inside one `AsyncSession` /
+transaction, committed once. Either both happen or neither does.
+
+## Consequences
+
+Every retainer balance is fully auditable from the entry history alone.
+The cost is that "editing a mistake" always means writing one more row,
+and callers reading history need to understand a reversal pair rather
+than seeing a value simply change.
+

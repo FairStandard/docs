@@ -1,0 +1,87 @@
+---
+title: "notifications-api"
+sidebarTitle: "Overview"
+description: "The platform's one delivery layer: any service publishes a NotificationEvent, this service fans it out to the channels a recipient's preferences allow, tracks…"
+---
+
+The platform's one delivery layer: any service publishes a
+NotificationEvent, this service fans it out to the channels a
+recipient's preferences allow, tracks read state, and answers "what
+needs my attention." It renders nothing fancy and owns no domain
+logic — subject text and the link to follow are already decided by the
+producer. Own Postgres, own Redis stream, own service, workspace-scoped
+throughout.
+
+## Run it
+
+```bash
+uv sync --dev
+uv run fastapi dev        # the HTTP surface
+uv run python fanout.py   # the fan-out worker, its own process
+```
+
+Configuration is environment-driven under the `NOTIFICATIONS_` prefix
+(`settings.py`). Migrations are real alembic — `uv run alembic upgrade
+head` against the same `NOTIFICATIONS_DATABASE_URL`; the chain is
+exercised both directions by `tests/test_migrations.py`.
+
+## Checks
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run pyrefly check
+```
+
+CI runs the same four checks from the committed lockfile on every push and
+pull request. Tests spin up a real Postgres and Redis via testcontainers
+(Docker required locally).
+
+## Architecture
+
+- `events.py` — `NotificationEvent`, the one shape every producer
+  publishes. Kind and channel are registry strings (ADR 0002) — no
+  closed vocabulary lives in this service.
+- `queueing.py` — `NotificationStream` on servicekit's `StreamQueue`.
+  The codec validates structure only (every field present); a malformed
+  event dead-letters, a well-formed event naming an unfamiliar kind
+  does not.
+- `delivery.py` — the `Channel` seam (ADR 0001): `InAppChannel` (real —
+  delivering means writing a `Notification` row) and `FakeEmailChannel`
+  / `FakePushChannel` (record what they'd have sent, no provider SDK
+  this land).
+- `fanout.py` — the fan-out worker: one event in, one `deliver` call
+  per channel whose preference allows it. Its own process —
+  `uv run python fanout.py`.
+- `models.py` / `store.py` — `Notification` (the in-app channel's own
+  delivery record and the feed's source) and `ChannelPreference`
+  (recipient + kind pattern + channel, allow/mute; default allow —
+  see ADR 0003). `store.py` also resolves preferences: an exact kind
+  beats a `prefix.*` wildcard.
+- `main.py` — the internal HTTP surface, workspace-scoped by
+  `X-Workspace-Id`: the feed (`GET /internal/feed`, unread count
+  included), mark-read / mark-all-read, preferences get/set (both
+  scoped to the caller via `X-Caller-Id`), and `POST /internal/publish`
+  for producers without direct stream access — it writes to the same
+  stream fan-out already consumes, so there is one ingestion path
+  either way.
+
+Decision records live in `docs/adr/`; the domain glossary in
+`CONTEXT.md`.
+
+## Out of scope this wave
+
+Real email/push sending (SMTP, provider SDKs) — the seam is built, the
+adapters are fakes. Digesting or batching notifications. Per-channel
+delivery receipts or retries beyond the stream's own retry budget.
+Notification templates or rendering — producers already hand over
+finished subject text and a link.
+
+## Status
+
+Event ingestion, fan-out, the feed, read state, preferences, and the
+publish door are built and workspace-scoped. `in_app` is the one real
+channel; `email` and `push` are Fakes behind the same seam, ready to
+become real adapters without touching fan-out logic.
+

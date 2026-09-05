@@ -1,0 +1,96 @@
+---
+title: "7. Relation facts are emitted best-effort, with a cooldown circuit breaker"
+description: "Date: 2026-08-31"
+---
+
+Date: 2026-08-31
+
+## Status
+
+Accepted
+
+## Context
+
+FS-934 wires messaging as a producer onto relations-api's fact stream:
+once `finalize` seals a Package, every record node it carries is
+honestly `attachment_of` that package (`gate.py`'s `sealing.py`/`prune`
+already narrow the package to exactly the nodes actually delivered, and
+each record node's `source_ref.evidence_record_id` is the record id
+relations-api's `record` reference type wants). The vocabulary is
+registry-validated by relations-api's projector, so messaging mirrors
+the exact wire shape from relations-api/queueing.py and vocabulary.py
+rather than inventing a looser one; the mirror is contract-tested
+against a verbatim copy of relations-api's decode logic in
+`tests/test_relations_facts.py`.
+
+Note this is a different relationship to relations-api than the one
+`upstream.py`'s `HttpRelations` already has: that is a *read* — the
+traverser asking relations-api's HTTP door for the two-hop map when
+building a draft. This ADR is a *write* — messaging publishing onto
+relations-api's own private stream, never calling into relations-api
+directly (ADR 0003 in relations-api). The two coexist without
+contradiction: reads stay HTTP, writes stay the fact stream.
+
+servicekit's `StreamQueue.submit` (pinned rev
+3941a3e6237792b230b81db33b8cadd0fd82ba31) has no producer-side buffering
+or retry — a Redis outage surfaces as a raised exception, synchronously,
+at the call site, with the client's own connect/socket timeout as the
+only bound on how long that takes. intake-api's first version of this
+pattern (ADR 0009 there) wrapped each `emit()` in a bare try/except and
+called it best-effort — true for a single fact, false for a package with
+many record nodes: every emit during an outage pays the full connect
+timeout again, so a fifty-node package would stall finalize for
+fifty timeouts back to back.
+
+## Decision
+
+Publishing is best-effort, with a cooldown circuit breaker on top.
+`RelationsEmitter.emit` wraps `submit` in a broad `try/except`; the first
+failure opens the circuit for `cooldown_seconds` (default 30s), during
+which every subsequent `emit()` call is an immediate no-op — no network
+attempt, no wait. A success (or the cooldown elapsing) closes the
+circuit again. The Redis URL still carries short `socket_connect_timeout`
+/ `socket_timeout` query parameters (0.5s each) so the one attempt that
+does happen fails fast rather than hanging. No local queue or retry is
+built on messaging's side: a fact that fails to publish is dropped, not
+buffered.
+
+This is safe because relations-api's `record_fact` is idempotent
+(`uq_edge_fact`) and the relations graph is a downstream convenience —
+finalize's own success (the sealed, hash-verified, audit-anchored
+Package) never depends on it. A dropped attachment_of fact just means
+that edge is absent from the graph until something re-derives it, never
+a corrupted or inconsistent Package.
+
+### The deletion test
+
+Delete `relations_emitter.py` (or set `relations_redis_url=""`, which
+selects `NullRelationsEmitter`) and re-run
+`tests/test_relations_wiring.py::test_no_relations_emitter_configured_leaves_finalize_unchanged`:
+`finalize`'s returned Package is unchanged. Verified in this change:
+
+- `tests/test_relations_emitter.py::test_emit_does_not_raise_when_redis_is_unreachable`
+  proves a single `emit()` never raises against a closed port.
+- `tests/test_relations_emitter.py::test_many_facts_against_a_downed_stream_cost_about_one_timeout`
+  proves the circuit breaker's actual purpose: twenty facts against a
+  black-holed address (a connect attempt that hangs to the timeout,
+  not one that refuses instantly) complete in about one timeout's
+  worth of wall time, not twenty.
+- `tests/test_relations_wiring.py::test_finalize_emits_one_attachment_of_fact_per_record_node`
+  proves emission happens at the right point — once, per record node,
+  after the package is fully sealed and anchored.
+
+## Consequences
+
+The relations graph can lag or drop attachment_of edges during a Redis
+outage without that ever slowing or failing a package delivery — and,
+unlike a naive per-fact try/except, a large package does not turn a
+Redis outage into a proportionally long stall. The cost is the same
+silent data-loss window intake-api's ADR 0009 accepts, for the same
+reason: the graph is rebuildable from relations-api's own bulk-load door
+and from replaying future facts, never from messaging replaying old
+ones. Follow-up: intake-api's emitter (ADR 0009) does not yet have this
+circuit breaker and should be backported to it — a large import with
+many delivered records has the same unbounded-stall exposure this ADR
+fixes here.
+

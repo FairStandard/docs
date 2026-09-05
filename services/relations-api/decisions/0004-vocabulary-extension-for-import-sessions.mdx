@@ -1,0 +1,66 @@
+---
+title: "4. Vocabulary extension: import sessions and party mentions"
+description: "Date: 2026-08-30"
+---
+
+Date: 2026-08-30
+
+## Status
+
+Accepted
+
+## Context
+
+FS-934 wired intake-api as a producer onto this service's fact stream
+(ADR 0009 in intake-api). Two facts intake wanted to emit turned out to
+be impossible with the vocabulary as it stood:
+
+- "record belongs-to import session" — no `import_session` reference
+  type existed, and no belongs-to-shaped relation kind existed.
+- "record mentions party" — `party` was already a reference type (used
+  today for `mentions_same_party` edges between two records), but there
+  was no direct record-to-party relation kind; only the record-to-record
+  `mentions_same_party` kind existed.
+
+Both were flagged on FS-934 as vocabulary gaps for this service to
+close, not something a producer should invent ad hoc — consistent with
+this module's own rule that a kind is defined here and nowhere else.
+
+## Decision
+
+Add one reference type and two relation kinds to `vocabulary.py`:
+
+- `import_session` (`ReferenceType`) — the unit intake groups an
+  upload's records under.
+- `belongs_to` (`RelationKind`) — a record belongs to the import session
+  that produced it.
+- `mentions` (`RelationKind`) — a record mentions a specific, resolved
+  party. Distinct from `mentions_same_party`, which ties two records
+  together through a shared party rather than naming the party itself.
+
+## Open question: the registries-are-data law
+
+The platform's registries-are-data expectation is that adding a value to
+a registry should not require a code change and a redeploy. This
+vocabulary is a `Literal`-backed enum: every new kind or reference type
+is a source edit to `vocabulary.py`, a new release, and every consuming
+service's mirrored copy going stale until it is manually updated (as
+intake-api's `relations_facts.py` already does today). That is a real
+tension with the law, and this change does not resolve it — it extends
+the vocabulary the same way ADR 0001 always assumed it would grow.
+
+Rebuilding the vocabulary as an actual data-backed registry (a table,
+with `record_fact` validating against it instead of a `Literal`) is out
+of scope for this slice. It would touch the decode-time validation this
+service leans on to dead-letter poison facts (`queueing.py`), every
+mirrored copy in every producer, and the meaning of "the projector never
+sees an invalid kind" that ADR 0001 and ADR 0002 both rest on. That
+redesign needs its own ADR and its own review, not a rider on a
+two-value vocabulary extension. Flagging it here so it is not lost.
+
+## Consequences
+
+`import_session`, `belongs_to`, and `mentions` are available to any
+producer immediately. The Literal/mirrored-copy pattern continues
+unchanged, with the tradeoff above now written down instead of implicit.
+

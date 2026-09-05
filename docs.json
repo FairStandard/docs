@@ -96,6 +96,469 @@
             "pages": [
               "how-this-site-is-built"
             ]
+          },
+          {
+            "group": "billing-payments-api",
+            "pages": [
+              "services/billing-payments-api/index",
+              "services/billing-payments-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/billing-payments-api/decisions/0001-a-separate-billing-lifecycle-from-entitlements",
+                  "services/billing-payments-api/decisions/0002-the-trust-ledger-is-append-only",
+                  "services/billing-payments-api/decisions/0003-payment-provider-is-a-protocol-and-a-fake",
+                  "services/billing-payments-api/decisions/0004-accounting-sync-is-a-seam-not-an-integration",
+                  "services/billing-payments-api/decisions/0005-subscription-billing-shares-the-invoice-table",
+                  "services/billing-payments-api/decisions/0006-time-entry-approval-and-locking",
+                  "services/billing-payments-api/decisions/0007-the-billing-cycle-door-is-gated"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/billing-payments-api.json",
+                  "directory": "services/billing-payments-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "case-api",
+            "pages": [
+              "services/case-api/index",
+              "services/case-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/case-api/decisions/0001-the-foundation-store-is-cases-orders-and-docket-only",
+                  "services/case-api/decisions/0002-phase-is-opaque-pack-vocabulary-behind-a-reader-seam",
+                  "services/case-api/decisions/0003-no-servicekit-dependency-this-wave",
+                  "services/case-api/decisions/0004-reassessed-servicekit-adopt-the-header-di-only"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/case-api.json",
+                  "directory": "services/case-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "deadlines-api",
+            "pages": [
+              "services/deadlines-api/index",
+              "services/deadlines-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/deadlines-api/decisions/0001-status-is-lifecycle-urgency-is-computed",
+                  "services/deadlines-api/decisions/0002-rules-and-calendar-are-content-behind-a-reader-seam",
+                  "services/deadlines-api/decisions/0003-case-events-arrive-through-a-doorway-to-case-api"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/deadlines-api.json",
+                  "directory": "services/deadlines-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "document-creation-api",
+            "pages": [
+              "services/document-creation-api/index",
+              "services/document-creation-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/document-creation-api/decisions/0001-exhibit-numbers-and-captions-are-computed-never-stored",
+                  "services/document-creation-api/decisions/0002-templates-copy-at-apply-no-live-reference",
+                  "services/document-creation-api/decisions/0003-no-servicekit-dependency-this-wave"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/document-creation-api.json",
+                  "directory": "services/document-creation-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "entitlements-api",
+            "pages": [
+              "services/entitlements-api/index",
+              "services/entitlements-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/entitlements-api/decisions/0001-resolve-is-never-cached-grants-are-not-decisions",
+                  "services/entitlements-api/decisions/0002-tier-grants-expand-against-the-registry-at-resolve-time",
+                  "services/entitlements-api/decisions/0003-pro-bono-is-a-whole-case-grant-not-an-org-flag",
+                  "services/entitlements-api/decisions/0004-identity-reader-is-shaped-around-the-real-verify-door"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/entitlements-api.json",
+                  "directory": "services/entitlements-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "evidence-api",
+            "pages": [
+              "services/evidence-api/index",
+              "services/evidence-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/evidence-api/decisions/0001-evidence-is-its-own-service",
+                  "services/evidence-api/decisions/0002-insert-only",
+                  "services/evidence-api/decisions/0003-one-records-table",
+                  "services/evidence-api/decisions/0004-no-relation-facts-to-emit-yet",
+                  "services/evidence-api/decisions/0005-download-door-is-audited"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/evidence-api.json",
+                  "directory": "services/evidence-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "files-api",
+            "pages": [
+              "services/files-api/index",
+              "services/files-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/files-api/decisions/0001-a-dedicated-files-service",
+                  "services/files-api/decisions/0002-layered-format-detection"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/files-api.json",
+                  "directory": "services/files-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "filings-api",
+            "pages": [
+              "services/filings-api/index",
+              "services/filings-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/filings-api/decisions/0001-status-is-lifecycle-recommendations-are-computed",
+                  "services/filings-api/decisions/0002-recommendation-engine-is-content-driven",
+                  "services/filings-api/decisions/0003-document-creation-handoff-via-blocks-not-templates",
+                  "services/filings-api/decisions/0004-filing-announces-obligation-facts-deadlines-computes-dates"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/filings-api.json",
+                  "directory": "services/filings-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "identity-api",
+            "pages": [
+              "services/identity-api/index",
+              "services/identity-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/identity-api/decisions/0001-a-dedicated-identity-service",
+                  "services/identity-api/decisions/0002-auth-mechanics",
+                  "services/identity-api/decisions/0003-registries-as-seeded-rows",
+                  "services/identity-api/decisions/0004-no-servicekit"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/identity-api.json",
+                  "directory": "services/identity-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "intake-api",
+            "pages": [
+              "services/intake-api/index",
+              "services/intake-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/intake-api/decisions/0001-parsers-live-inside-intake",
+                  "services/intake-api/decisions/0002-intake-keeps-paperwork-not-evidence",
+                  "services/intake-api/decisions/0003-handoffs-by-api",
+                  "services/intake-api/decisions/0004-extraction-validates-itself",
+                  "services/intake-api/decisions/0005-calls-report-carries-its-own-claim",
+                  "services/intake-api/decisions/0006-classify-by-meaning-not-container",
+                  "services/intake-api/decisions/0007-layered-format-detection",
+                  "services/intake-api/decisions/0008-deterministic-extraction-moves-to-files-api",
+                  "services/intake-api/decisions/0009-best-effort-relations-emission"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/intake-api.json",
+                  "directory": "services/intake-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "learning-api",
+            "pages": [
+              "services/learning-api/index",
+              "services/learning-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/learning-api/decisions/0001-modules-are-versioned-immutable-content",
+                  "services/learning-api/decisions/0002-suggestion-mapping-is-data-on-the-module",
+                  "services/learning-api/decisions/0003-assignments-pin-a-module-version",
+                  "services/learning-api/decisions/0004-state-and-analysis-content-are-read-through-seams"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/learning-api.json",
+                  "directory": "services/learning-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "marketplace-api",
+            "pages": [
+              "services/marketplace-api/index",
+              "services/marketplace-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/marketplace-api/decisions/0001-discovery-stays-local-until-search-api-builds-full-text",
+                  "services/marketplace-api/decisions/0002-consultation-handoff-seams-are-fake-until-the-receiving-doors-exist",
+                  "services/marketplace-api/decisions/0003-listing-activation-requires-billingreader-fake-only",
+                  "services/marketplace-api/decisions/0004-listing-index-facts-are-published-best-effort"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/marketplace-api.json",
+                  "directory": "services/marketplace-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "media-api",
+            "pages": [
+              "services/media-api/index",
+              "services/media-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/media-api/decisions/0001-a-dedicated-media-service",
+                  "services/media-api/decisions/0002-the-measurement-store",
+                  "services/media-api/decisions/0003-measurement-behind-a-seam",
+                  "services/media-api/decisions/0004-transcripts-are-measurement-derived-readable-content",
+                  "services/media-api/decisions/0005-queue-failure-leaves-a-visible-recoverable-row"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/media-api.json",
+                  "directory": "services/media-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "messaging-api",
+            "pages": [
+              "services/messaging-api/index",
+              "services/messaging-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/messaging-api/decisions/0001-a-dedicated-package-service",
+                  "services/messaging-api/decisions/0002-own-store-audit-pointer",
+                  "services/messaging-api/decisions/0003-nodes-embed-content",
+                  "services/messaging-api/decisions/0004-depth-fixed-at-two",
+                  "services/messaging-api/decisions/0005-stand-in-roles-until-identity",
+                  "services/messaging-api/decisions/0006-identity-swap-real-verify-and-registry",
+                  "services/messaging-api/decisions/0007-best-effort-relations-emission"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/messaging-api.json",
+                  "directory": "services/messaging-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "notifications-api",
+            "pages": [
+              "services/notifications-api/index",
+              "services/notifications-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/notifications-api/decisions/0001-channels-are-adapters",
+                  "services/notifications-api/decisions/0002-registry-strings-events-in",
+                  "services/notifications-api/decisions/0003-preferences-default-to-allow",
+                  "services/notifications-api/decisions/0004-pyrefly-channels-false-positive"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/notifications-api.json",
+                  "directory": "services/notifications-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "packs-api",
+            "pages": [
+              "services/packs-api/index",
+              "services/packs-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/packs-api/decisions/0001-packs-are-versioned-immutable-content",
+                  "services/packs-api/decisions/0002-practice-areas-are-data",
+                  "services/packs-api/decisions/0003-packs-carry-legal-domain-structure-not-product-vocabulary"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/packs-api.json",
+                  "directory": "services/packs-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "relations-api",
+            "pages": [
+              "services/relations-api/index",
+              "services/relations-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/relations-api/decisions/0001-a-dedicated-relations-service",
+                  "services/relations-api/decisions/0002-workspace-partitioned-postgres-with-age",
+                  "services/relations-api/decisions/0003-facts-in-never-calls-out",
+                  "services/relations-api/decisions/0004-vocabulary-extension-for-import-sessions"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/relations-api.json",
+                  "directory": "services/relations-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "search-api",
+            "pages": [
+              "services/search-api/index",
+              "services/search-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/search-api/decisions/0001-index-technology-pg-search",
+                  "services/search-api/decisions/0002-event-fed-leaf-service",
+                  "services/search-api/decisions/0003-hard-delete-on-redaction",
+                  "services/search-api/decisions/0004-public-visibility-and-status-driven-public-index"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/search-api.json",
+                  "directory": "services/search-api/api"
+                }
+              }
+            ]
+          },
+          {
+            "group": "servicekit",
+            "pages": [
+              "services/servicekit/index",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/servicekit/decisions/0001-doorway-errors-are-a-factory-not-a-copy-paste",
+                  "services/servicekit/decisions/0002-dataclass-codec-is-honest-about-its-field-types",
+                  "services/servicekit/decisions/0003-pagination-owns-only-the-offset-loop",
+                  "services/servicekit/decisions/0004-publish-versioned-fixes-the-retry-state-law-dropped",
+                  "services/servicekit/decisions/0005-fastapi-is-optional-the-header-deps-are-not-hard-wired",
+                  "services/servicekit/decisions/0006-test-only-stream-helpers-leave-the-production-class"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "state-law-api",
+            "pages": [
+              "services/state-law-api/index",
+              "services/state-law-api/domain-model",
+              {
+                "group": "Decisions",
+                "pages": [
+                  "services/state-law-api/decisions/0001-jurisdiction-law-as-one-content-service",
+                  "services/state-law-api/decisions/0002-jurisdiction-hash-partitioned-postgres",
+                  "services/state-law-api/decisions/0003-shared-content-not-workspace-scoped",
+                  "services/state-law-api/decisions/0004-remaining-owned-here-content-follows-the-versioned-partition-idiom",
+                  "services/state-law-api/decisions/0005-practice-area-validated-against-packs-api"
+                ]
+              },
+              {
+                "group": "API reference",
+                "openapi": {
+                  "source": "/openapi/state-law-api.json",
+                  "directory": "services/state-law-api/api"
+                }
+              }
+            ]
           }
         ]
       }

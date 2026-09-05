@@ -1,0 +1,30 @@
+---
+title: "fetch_all_pages owns only the offset loop"
+description: "Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949)."
+---
+
+Ruled 2026-08-30 as part of the servicekit extraction bundle (FS-949).
+
+`deadlines-api/case_reader.py` and `filings-api/case_reader.py` both walk
+case-api's `{items, total}` docket paging with the identical loop: fetch
+a page at an offset, extend a list, advance the offset by how many items
+came back, and stop when a page comes back short of the page size or the
+running offset reaches the page's own `total`. `fetch_all_pages` is that
+loop and nothing else.
+
+It deliberately does not own the request (headers, doorway retries) or
+the item-to-domain-object mapping (`CaseEvent`, `DocketEvent`) — those
+stay with the caller's `fetch_page` closure, the same way they do today.
+Only the offset bookkeeping moves, because that bookkeeping is where the
+one real bug lives: trusting `total` alone. A page that returns fewer
+items than asked for stops the loop even if `total` never catches up —
+`tests/test_pagination.py::test_a_zero_total_with_items_present_still_terminates_on_the_short_page`
+proves a lying `total` cannot spin the loop forever, and
+`test_a_single_empty_page_terminates_instead_of_looping_forever` proves
+the same for a page that comes back empty.
+
+Deletion test: `tests/test_pagination.py::test_stops_at_a_full_final_page_via_the_total_not_a_fourth_call`
+— if the loop stopped only on a short page and dropped the `total`
+check, this test's call-count assertion fails (a full final page would
+trigger one more unnecessary fetch).
+
