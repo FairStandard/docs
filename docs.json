@@ -118,6 +118,20 @@
                   "deadlines-and-next-steps/litigants/your-hearing-is-in-two-weeks",
                   "deadlines-and-next-steps/litigants/troubleshooting"
                 ]
+              },
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "deadlines-and-next-steps/attorneys/overview",
+                  "deadlines-and-next-steps/attorneys/get-started",
+                  "deadlines-and-next-steps/attorneys/track-deadline-exposure-across-your-caseload",
+                  "deadlines-and-next-steps/attorneys/work-your-next-steps-queue",
+                  "deadlines-and-next-steps/attorneys/set-up-court-prep-tasks-for-a-client",
+                  "deadlines-and-next-steps/attorneys/draft-a-filing-for-a-client",
+                  "deadlines-and-next-steps/attorneys/how-deadline-exposure-rolls-up-across-your-caseload",
+                  "deadlines-and-next-steps/attorneys/a-clients-discovery-responses-are-due-in-4-days",
+                  "deadlines-and-next-steps/attorneys/troubleshooting"
+                ]
               }
             ]
           },
