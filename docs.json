@@ -331,6 +331,18 @@
             ]
           },
           {
+            "group": "Your firm for developers",
+            "pages": [
+              "your-firm/developers/overview",
+              "your-firm/developers/get-started",
+              "your-firm/developers/add-a-member-and-assign-a-case-team",
+              "your-firm/developers/move-time-from-capture-to-a-paid-invoice",
+              "your-firm/developers/how-this-sections-capabilities-are-gated-by-tier",
+              "your-firm/developers/your-integration-needs-to-check-a-workspaces-billing-tier",
+              "your-firm/developers/troubleshooting"
+            ]
+          },
+          {
             "group": "billing-payments-api",
             "pages": [
               "services/billing-payments-api/index",

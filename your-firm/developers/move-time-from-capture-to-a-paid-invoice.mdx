@@ -1,0 +1,75 @@
+---
+title: 'Move time from capture to a paid invoice'
+description: 'Record billable time on billing-payments-api, move it through submit, approve, and lock, then build, send, and pay a client invoice from it.'
+kind: 'how-to'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Time to invoice'
+---
+
+A `TimeEntry` only becomes billable after it clears three checked steps, and an invoice can only pull from an entry that has cleared them — this walks through the full <span className="kw">lifecycle</span>, capture through payment.
+
+## Before you begin
+
+Every door here takes `X-Workspace-Id`. Case-linked work done inside Vero arrives as `TimeEntry` rows automatically through a Redis-stream consumer that other services publish to; the manual door below is for anything that consumer does not see.
+
+1. Record a manual time entry.
+
+   ```bash
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"case_id": "case_9f21", "source_service": "manual-entry", "work_kind": "drafting", "duration_seconds": 3600, "billable": true}'
+   ```
+
+   This door always writes `capture_provenance: "manual"`; automatic entries from the stream consumer carry `"automatic"` instead, but both are the same `TimeEntry` shape and move through the same lifecycle from here.
+
+2. Submit, approve, and lock it.
+
+   ```bash
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries/88/submit -H "X-Workspace-Id: $WORKSPACE_ID"
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries/88/approve -H "X-Workspace-Id: $WORKSPACE_ID" -H "Content-Type: application/json" -d '{"approved_by": "dana@reyeslaw.com"}'
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries/88/lock -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   Each door only accepts the entry in the exact prior status — submit needs `captured`, approve needs `submitted`, lock needs `approved` — and calling one out of order returns `409` naming the entry's actual status. Once locked, `locked_at` is set and the row's substantive fields are never written again.
+
+3. Build an invoice from the locked entry.
+
+   ```bash
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/invoices \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"case_id": "case_9f21", "client_reference_id": "client_884", "currency": "USD",
+          "lines": [{"kind": "time", "description": "Drafting", "unit_amount_cents": 35000, "time_entry_id": 88}]}'
+   ```
+
+   A line naming a `time_entry_id` that is still `submitted` (not yet approved or locked) returns `409` from `TimeEntryNotConsumable`; a `time_entry_id` that does not exist returns `404`. A successful line consumes the entry — its status flips to `invoiced` and it cannot be added to a second invoice.
+
+4. Send the invoice, then pay it.
+
+   ```bash
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/invoices/9/send -H "X-Workspace-Id: $WORKSPACE_ID"
+
+   curl -X POST https://billing-payments-api.internal.fairstandard.com/invoices/9/pay \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"source": "retainer", "retainer_account_id": 17}'
+   ```
+
+   Only a `draft` invoice can be sent, and only a `sent` invoice can be paid — either call out of order returns `409` naming the invoice's status. Paying with `"source": "retainer"` draws the trust ledger and marks the invoice paid in one transaction, and fails `409` if the account does not hold enough; `"source": "external"` records the payment through a `Fake` provider that never charges a card.
+
+## What happens next
+
+If you find a mistake in a locked entry, `POST /time-entries/{id}/correct` creates a new entry carrying `correction_of_id` and a signed `duration_delta_seconds` — the original row is never touched. A sent invoice that should not have gone out is voided with `POST /invoices/{id}/void` and a reason; there is no delete door for an invoice at any status.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="How this section's capabilities are gated by tier" icon="link" href="/your-firm/developers/how-this-sections-capabilities-are-gated-by-tier">
+    Why cap.time-capture and cap.client-invoicing both require Premium Professional, and where that check actually runs.
+  </Card>
+  <Card title="Get started with your firm" icon="rocket" href="/your-firm/developers/get-started">
+    See this flow as part of a full walkthrough from registration to a paid invoice.
+  </Card>
+</Columns>

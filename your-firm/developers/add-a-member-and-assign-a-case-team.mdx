@@ -1,0 +1,58 @@
+---
+title: 'Add a member and assign a case team'
+description: "Add a colleague to an organization on identity-api, assign someone to a case team, and remove either one, with the registry checks each door runs."
+kind: 'how-to'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Add member, assign case team'
+---
+
+Organization membership and case-team assignment are two different tables on `identity-api`, granting two different things, and this covers both doors plus the <span className="kw">registry</span> checks each one runs before it writes a row.
+
+## Before you begin
+
+The account you are adding must already exist — every door below takes a `user_id`, never an email address to invite. Organization doors are scoped by `org_id` in the path; only the case-team door takes `X-Workspace-Id`, because a case-team seat is workspace-scoped while a membership is org-scoped.
+
+1. Add someone to the organization.
+
+   ```bash
+   curl -X POST https://identity-api.internal.fairstandard.com/internal/organizations/42/members \
+     -H "Content-Type: application/json" \
+     -d '{"user_id": 502, "org_role": "attorney"}'
+   ```
+
+   `org_role` is checked against the seeded `OrgRole` registry (`owner`, `attorney`, `staff`, `provider`) before the row is written; an unrecognized value is `422`, not a silent accept. If this `user_id` already has a membership on this org that was previously removed, this same door clears `removed_at` and updates the role instead of creating a second row — that is the entire "re-invite" mechanism today.
+
+2. Assign that person to a case.
+
+   ```bash
+   curl -X POST https://identity-api.internal.fairstandard.com/internal/case-team \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"case_id": "case_9f21", "user_id": 502, "case_relationship": "representing_professional"}'
+   ```
+
+   `case_relationship` is checked against the seeded `CaseRelationship` registry (`representing_professional`, `represented_party`, `self_represented_party`, `external_participant`); an unrecognized value is `422`. This door is scoped by `X-Workspace-Id`: if this user already holds a seat on this case in a different workspace, the call comes back `409` rather than moving the seat.
+
+3. Remove someone from the organization.
+
+   ```bash
+   curl -X DELETE https://identity-api.internal.fairstandard.com/internal/organizations/42/members/502
+   ```
+
+   This is a soft delete — it sets `removed_at` on the membership row rather than deleting it, and a membership that was never there at all returns `404`. Removing someone from the organization does not touch any case-team row they hold; those are separate grants and stay in place.
+
+## What happens next
+
+Both grants take effect immediately: there is no pending state and no acceptance step for the person being added. An organization member added this way can sign in to the org's workspace at the role given; a case-team member shows up on that case's team the moment the call returns. Neither door notifies the person by email — that has to happen in your own integration if your product needs it.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your firm overview" icon="briefcase" href="/your-firm/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="Get started with your firm" icon="rocket" href="/your-firm/developers/get-started">
+    See this step as part of a full walkthrough from registration to a paid invoice.
+  </Card>
+</Columns>

@@ -1,0 +1,43 @@
+---
+title: 'Your firm overview'
+description: 'How identity-api, billing-payments-api, and entitlements-api back organization membership, case teams, retainer accounting, billable time, and invoicing.'
+kind: 'overview'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Overview'
+---
+
+The Your firm section maps to eight capabilities in the platform's canon register, and no single service backs all of them. `identity-api` owns accounts, organizations, and case teams; `billing-payments-api` owns retainer accounting, billable time, and invoicing; `entitlements-api` is the <span className="kw">separate</span> door answering whether a workspace's tier allows a given capability. This page covers each service's HTTP surface, and which capabilities have no door behind them.
+
+## How it works
+
+`identity-api` covers `cap.identity`, `cap.org-admin`, `cap.invitations`, and `cap.clients`. `POST /internal/register`, `.../login`, `.../logout`, and `GET /internal/verify` are the whole account surface — no door updates a profile once it exists. `POST /internal/organizations` creates an org with its creator as owner; `POST /internal/organizations/{org_id}/members` adds a member by user ID and org role, and calling it again on someone already removed clears `removed_at` instead of creating a second row — the only form "re-invite" takes today. `POST /internal/case-team` assigns an account a case relationship — representing professional, represented party, self-represented party, or external participant — and this is the only door scoped by `X-Workspace-Id`; a seat already held in another workspace comes back `409`, never a silent move. Every door here requires the person's account to already exist: there is no client directory and no email-invitation door. See [identity-api's overview](/services/identity-api/index).
+
+`billing-payments-api` covers `cap.retainer`, `cap.time-capture`, `cap.client-invoicing`, and `cap.accounting-sync`. Every door takes `X-Workspace-Id`. Retainer accounting (`POST /retainer-accounts`, `.../fund`, `.../balance`, `.../history`) is a real trust ledger — balance is always `SUM(signed_cents)` over append-only entries, never stored. Time entries move `captured` → `submitted` → `approved` → `locked` through matching doors; automatic entries arrive through a Redis-stream consumer as other services do case-linked work, and `POST /time-entries` is the manual door for the rest. `POST /invoices` builds a bill from manual lines or from time already approved or locked; `.../lines`, `.../send`, `.../void`, and `.../pay` round out the lifecycle — no delete door, only void. Paying an invoice draws a funded retainer or calls a payment seam that is `Fake` today, so no card is ever charged. `cap.accounting-sync` has a `Protocol` and a `FakeAccountingSync`, but nothing in `main.py` wires it to a route — there is no HTTP door for accounting sync at all. See [billing-payments-api's overview](/services/billing-payments-api/index).
+
+`entitlements-api` sits beside both, not between them. `POST /internal/resolve` answers "is this capability available on this case" for a workspace, checking direct grants, pro-bono status, and required tier in that order — but neither other service calls this door itself. If your integration needs to enforce that a workspace's tier allows a capability before opening a retainer account or sending an invoice, your integration calls `resolve` itself. See [entitlements-api's overview](/services/entitlements-api/index) and [how this section's capabilities are gated by tier](/your-firm/developers/how-this-sections-capabilities-are-gated-by-tier).
+
+## What you can do here
+
+- **Manage accounts and sessions.** `POST /internal/register`, `.../login`, `.../logout`, `GET /internal/verify` — `identity-api`.
+- **Run an organization's roster.** `POST /internal/organizations`, `.../members`, `DELETE .../members/{user_id}` — `identity-api`.
+- **Assign a case team.** `POST /internal/case-team`, workspace-scoped, `409` on a cross-workspace seat conflict.
+- **Run retainer trust accounting.** `POST /retainer-accounts`, `.../fund`, `GET .../balance`, `GET .../history` — `billing-payments-api`.
+- **Capture and lock billable time.** `POST /time-entries`, `.../submit`, `.../approve`, `.../lock`, `.../correct` — `billing-payments-api`.
+- **Build and settle a client invoice.** `POST /invoices`, `PUT .../lines`, `POST .../send`, `.../void`, `.../pay` — `billing-payments-api`.
+- **Check whether a tier allows a capability.** `POST /internal/resolve` on `entitlements-api`, called from your own integration, not automatically.
+
+## Availability
+
+`cap.accounting-sync` is registered with real permissions and a Premium Professional tier, and `entitlements-api` will resolve it allowed for a subscribed workspace — but `allowed: true` does not mean there is anything to call next; `billing-payments-api` exposes no accounting-sync door. `cap.org-admin`'s permissions name an audit log, seats, and flags, none of which have a door on `identity-api` — only member add and remove exist. `cap.identity`'s update and security permissions are registered without a matching door. `cap.invitations` names create and revoke permissions, but the door only adds or removes an existing account immediately; there is no pending state and no email sent to someone unregistered.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with your firm" icon="rocket" href="/your-firm/developers/get-started">
+    Register, build an organization, assign a case team, and take one client from retainer to a paid invoice.
+  </Card>
+  <Card title="How this section's capabilities are gated by tier" icon="link" href="/your-firm/developers/how-this-sections-capabilities-are-gated-by-tier">
+    What entitlements-api's resolve door actually checks, and why the billing doors don't call it for you.
+  </Card>
+</Columns>

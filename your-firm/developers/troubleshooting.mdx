@@ -1,0 +1,58 @@
+---
+title: 'Troubleshoot your firm'
+description: 'Fixes for the errors integrations hit most often against identity-api, billing-payments-api, and entitlements-api for this section.'
+kind: 'troubleshooting'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Troubleshooting'
+---
+
+Most <span className="kw">errors</span> integrating with this section come down to a lifecycle door called out of order, a registry value that was never seeded, a workspace or org mismatch, or a capability that resolves as entitled with no door built behind it yet. The list below covers what comes up most.
+
+<AccordionGroup>
+  <Accordion title="Adding a member or case-team seat returns 422">
+    The `org_role` or `case_relationship` you sent is not in the seeded registry (`OrgRole`: owner, attorney, staff, provider; `CaseRelationship`: representing_professional, represented_party, self_represented_party, external_participant). Extend the registry with `POST /internal/registries/{name}` first, or use one of the seeded values.
+  </Accordion>
+  <Accordion title="Assigning a case-team seat returns 409">
+    This user already holds a seat on this case in a different workspace. `identity-api` refuses to move the seat silently — assign the seat in the workspace it already exists in, or remove it there first.
+  </Accordion>
+  <Accordion title="Removing a member returns 404">
+    There is no membership row for this `org_id` and `user_id` pair, including one that was already removed and never re-added. A soft-removed membership is cleared with `removed_at`, not deleted, but re-adding it uses the same `POST .../members` door, not a separate restore.
+  </Accordion>
+  <Accordion title="A time-entry lifecycle door returns 409">
+    Each step only accepts the entry in the exact prior status: submit needs `captured`, approve needs `submitted`, lock needs `approved`. The error names the entry's actual status — check it against `GET /time-entries` before retrying the step you meant to call.
+  </Accordion>
+  <Accordion title="An invoice line naming a time_entry_id returns 409">
+    `TimeEntryNotConsumable` means that entry is still `submitted` and has not cleared approval. Only an `approved` or `locked` entry can go on an invoice line — approve it first.
+  </Accordion>
+  <Accordion title="Sending, voiding, or paying an invoice returns 409">
+    Each of these doors only accepts certain prior statuses: send needs `draft`, void needs `draft` or `sent`, pay needs `sent`. The error message names the invoice's current status and which status the door required.
+  </Accordion>
+  <Accordion title="Paying an invoice from retainer returns 409">
+    `InsufficientRetainerBalance` means the account's `SUM(signed_cents)` is less than the invoice total. Fund the account further with `POST /retainer-accounts/{id}/fund` before retrying the payment.
+  </Accordion>
+  <Accordion title="entitlements-api resolve returns allowed: true for cap.accounting-sync, but there's nothing to call">
+    That's accurate, not a bug. `cap.accounting-sync` is seeded in the capability registry with a real tier requirement, so a subscribed workspace resolves as entitled — but `billing-payments-api` exposes no HTTP door for it. `AccountingSync` is a `Protocol` and a `FakeAccountingSync` with no route wired to either.
+  </Accordion>
+  <Accordion title="I need to gate a call on tier, but the billing door let it through anyway">
+    None of `billing-payments-api`'s or `identity-api`'s doors check tier themselves. Call `entitlements-api`'s `POST /internal/resolve` for the exact capability and case before your own call to the billing door — the refusal has to happen in your integration.
+  </Accordion>
+  <Accordion title="I need a self-service door to update a user's profile or security settings">
+    There isn't one. `identity-api`'s account surface is register, login, logout, and verify only; nothing patches a `User` row after it's created.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, check the relevant service's own `docs/adr/` for a decision that names the behavior deliberately before assuming it's a defect, then contact support@fairstandard.com with the workspace ID and the exact request you sent.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your firm overview" icon="briefcase" href="/your-firm/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="How this section's capabilities are gated by tier" icon="link" href="/your-firm/developers/how-this-sections-capabilities-are-gated-by-tier">
+    The billing-tier check behind several of the errors above.
+  </Card>
+</Columns>

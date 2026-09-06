@@ -1,0 +1,139 @@
+---
+title: 'Get started with your firm'
+description: 'Register an account, build an organization and case team on identity-api, then move one client from a funded retainer to a paid invoice on billing-payments-api.'
+kind: 'get-started'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Get started'
+---
+
+This guide takes you across both services this section runs on: registering an account and <span className="kw">building</span> an organization and case team on `identity-api`, then opening a retainer, recording billable time, and issuing a paid invoice on `billing-payments-api`.
+
+## What you'll learn
+
+- How to register, log in, and create an organization on `identity-api`
+- How to add a colleague to the organization and assign someone to a case, and why those are two different doors
+- How to open and fund a retainer account, then record time and take it through submit, approve, and lock
+- How to build an invoice from locked time and settle it from the retainer
+
+## Before you begin
+
+`identity-api`'s account and organization doors take no workspace header at all — organizations are scoped by `org_id` in the path, not by `X-Workspace-Id`. Only `POST /internal/case-team` takes `X-Workspace-Id`, because a case team seat is workspace-scoped, not org-scoped. Every door on `billing-payments-api` takes `X-Workspace-Id`. Nothing here calls `entitlements-api`; if your integration needs to enforce a tier before any of these doors, it checks that itself.
+
+### Step 1: Register and log in
+
+```bash
+curl -X POST https://identity-api.internal.fairstandard.com/internal/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "dana@reyeslaw.com", "password": "correct horse battery staple", "full_name": "Dana Reyes"}'
+
+curl -X POST https://identity-api.internal.fairstandard.com/internal/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "dana@reyeslaw.com", "password": "correct horse battery staple"}'
+```
+
+Login returns `access_token`, `expires_at`, and the `user` row. The token is a JWT plus a revocable session row — `GET /internal/verify` checks both, and `POST /internal/logout` deletes the session row, which revokes the token immediately regardless of the JWT's own expiry.
+
+### Step 2: Create an organization
+
+```bash
+curl -X POST https://identity-api.internal.fairstandard.com/internal/organizations \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Reyes Family Law", "kind": "law-firm", "creator_user_id": 501}'
+```
+
+The creator becomes the org's owner automatically — there is no separate door to set the first owner.
+
+### Step 3: Add a colleague to the organization
+
+```bash
+curl -X POST https://identity-api.internal.fairstandard.com/internal/organizations/42/members \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 502, "org_role": "attorney"}'
+```
+
+`org_role` is validated against the seeded `OrgRole` registry (`owner`, `attorney`, `staff`, `provider`); an unrecognized value returns `422`. The colleague needs an existing account — this door has no email-invitation path.
+
+### Step 4: Assign someone to a case
+
+```bash
+curl -X POST https://identity-api.internal.fairstandard.com/internal/case-team \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "case_9f21", "user_id": 502, "case_relationship": "representing_professional"}'
+```
+
+Adding someone to the organization does not put them on any case, and this step does not add them to the organization — they are two separate grants. A seat already held for this user on this case in a different workspace comes back `409`.
+
+### Step 5: Open and fund a retainer account
+
+```bash
+curl -X POST https://billing-payments-api.internal.fairstandard.com/retainer-accounts \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "case_9f21", "client_reference_id": "client_884", "currency": "USD"}'
+
+curl -X POST https://billing-payments-api.internal.fairstandard.com/retainer-accounts/17/fund \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_cents": 500000, "source_type": "manual", "source_id": "wire-08302"}'
+```
+
+Opening the account does not fund it — funding is its own door. The balance is never a stored column; it is always `SUM(signed_cents)` over every fund and draw on record.
+
+### Step 6: Record and lock billable time
+
+```bash
+curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "case_9f21", "source_service": "manual-entry", "work_kind": "drafting", "duration_seconds": 3600}'
+
+curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries/88/submit -H "X-Workspace-Id: $WORKSPACE_ID"
+curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries/88/approve -H "X-Workspace-Id: $WORKSPACE_ID" -H "Content-Type: application/json" -d '{"approved_by": "dana@reyeslaw.com"}'
+curl -X POST https://billing-payments-api.internal.fairstandard.com/time-entries/88/lock -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+An entry only moves forward one step at a time — `captured` to `submitted` to `approved` to `locked` — and calling a step out of order returns `409`. Case-linked work other services do inside Vero arrives automatically through a separate stream consumer; this manual door covers everything else.
+
+### Step 7: Build, send, and pay an invoice
+
+```bash
+curl -X POST https://billing-payments-api.internal.fairstandard.com/invoices \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "case_9f21", "client_reference_id": "client_884", "currency": "USD",
+       "lines": [{"kind": "time", "description": "Drafting", "unit_amount_cents": 35000, "time_entry_id": 88}]}'
+
+curl -X POST https://billing-payments-api.internal.fairstandard.com/invoices/9/send -H "X-Workspace-Id: $WORKSPACE_ID"
+
+curl -X POST https://billing-payments-api.internal.fairstandard.com/invoices/9/pay \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"source": "retainer", "retainer_account_id": 17}'
+```
+
+Only a `time_entry_id` that is already `approved` or `locked` can go on a line — an entry still `submitted` returns `409`. Paying from retainer draws the ledger and marks the invoice paid in one transaction; paying with `"source": "external"` records the payment through a `Fake` provider that never actually charges a card.
+
+## Tips
+
+- `identity-api`'s organization doors are org-scoped by `org_id`, not workspace-scoped. Only `POST /internal/case-team` takes `X-Workspace-Id`.
+- A locked time entry is never edited again. Correct one with `POST /time-entries/{id}/correct`, which creates a new entry carrying a signed duration delta.
+- An invoice has no delete door. A sent invoice that should not have gone out is voided with a reason, never removed.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your firm overview" icon="briefcase" href="/your-firm/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="Add a member and assign a case team" icon="user-plus" href="/your-firm/developers/add-a-member-and-assign-a-case-team">
+    A closer look at identity-api's organization and case-team doors.
+  </Card>
+  <Card title="Move time from capture to a paid invoice" icon="clock" href="/your-firm/developers/move-time-from-capture-to-a-paid-invoice">
+    A closer look at billing-payments-api's time-to-invoice lifecycle.
+  </Card>
+  <Card title="Troubleshoot your firm" icon="life-buoy" href="/your-firm/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

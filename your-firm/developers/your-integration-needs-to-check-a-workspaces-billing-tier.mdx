@@ -1,0 +1,40 @@
+---
+title: "Your integration needs to check a workspace's billing tier"
+description: 'Call resolve before opening a retainer account or building an invoice, and handle a denial without guessing at the reason.'
+kind: 'use-case'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Check billing tier'
+---
+
+Your product is about to let a firm open a retainer account or send its first client invoice, and you need to know first whether that workspace's subscription actually covers it. `cap.retainer` and `cap.client-invoicing` both require Premium Professional, and `billing-payments-api` will not <span className="kw">refuse</span> the call on a lower tier's behalf — your integration has to ask first.
+
+## What to do
+
+Call `entitlements-api`'s resolve door for the exact capability, workspace, and case before calling the billing door:
+
+```bash
+curl -X POST https://entitlements-api.internal.fairstandard.com/internal/resolve \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"capability_key": "cap.retainer", "case_id": "case_9f21"}'
+```
+
+If `allowed` is `true`, proceed to `POST /retainer-accounts` on `billing-payments-api` as normal. If it is `false`, do not call the billing door at all — read `reason` and surface it to the person using your product rather than letting the billing door return a confusing success or a generic error for a request it was never going to honor anyway, since it performs no tier check of its own. Repeat the same check for `cap.client-invoicing` before the first invoice, and for `cap.time-capture` before recording billable time, since all three sit at the same tier but are checked independently — a grant for one does not imply the others.
+
+## What Vero does for you
+
+`resolve` runs the same three-step precedence every time and never caches the answer: a direct grant naming this exact capability wins first, a pro-bono grant on the whole case wins next, and the workspace's subscribed tier against the capability's `tier_required` decides it after that. Because nothing is cached, a workspace that upgrades mid-session gets the new answer on the very next call — there is no propagation delay and no need to wait for a cache to expire. The `case_id` you pass matters: `cap.retainer` and `cap.client-invoicing` are both per-case-enablable, so a grant can be scoped to one case without covering every case the workspace holds, and omitting `case_id` when your later call is case-scoped can produce an answer that does not match what the billing door will actually do.
+
+What Vero does not do is stop you from calling `billing-payments-api` directly and skipping this check — the retainer, time-entry, and invoice doors accept any request carrying a valid `X-Workspace-Id`, regardless of tier. A workspace on Basic can open a retainer account today if your integration lets it; the gate is only as real as the check your own code runs before the call.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="How this section's capabilities are gated by tier" icon="link" href="/your-firm/developers/how-this-sections-capabilities-are-gated-by-tier">
+    The full mechanics of resolve, and why cap.accounting-sync can resolve allowed with no door behind it.
+  </Card>
+  <Card title="Move time from capture to a paid invoice" icon="clock" href="/your-firm/developers/move-time-from-capture-to-a-paid-invoice">
+    What the billing door actually does once your integration has confirmed the tier.
+  </Card>
+</Columns>

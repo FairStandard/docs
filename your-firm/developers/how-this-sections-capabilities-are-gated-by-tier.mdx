@@ -1,0 +1,46 @@
+---
+title: "How this section's capabilities are gated by tier"
+description: 'What entitlements-api resolve actually checks for the eight Your firm capabilities, and why identity-api and billing-payments-api never call it themselves.'
+kind: 'concept'
+audience: 'developers'
+section: 'your-firm'
+sidebarTitle: 'Tier gating'
+---
+
+Each of this section's eight capabilities carries a `tier_required` in the platform's canon register, and `entitlements-api`'s `POST /internal/resolve` is the door that turns that field into a yes-or-no answer for one workspace. What is <span className="kw">easy</span> to miss is that no door on `identity-api` or `billing-payments-api` calls `resolve` itself — the check exists, but nothing wires it in front of the doors it would gate.
+
+## Three tiers, four permission-gated doors
+
+`cap.identity` and `cap.clients` require Basic; `cap.invitations` and `cap.org-admin` require Professional; `cap.retainer`, `cap.time-capture`, `cap.client-invoicing`, and `cap.accounting-sync` all require Premium Professional. `resolve` takes a `capability_key` (`cap.retainer`, for example), a `workspace_id` from `X-Workspace-Id`, and optionally a `case_id` and `beneficiary_ref`. It checks three things in fixed order — a direct grant issued for exactly this capability, then pro-bono status as a whole-case grant, then whether the workspace's tier covers the capability's `tier_required` — and returns the first match, or `allowed: false` with a reason if none apply. Nothing about `resolve` is cached; every call re-fetches active grants and re-runs the check.
+
+```bash
+curl -X POST https://entitlements-api.internal.fairstandard.com/internal/resolve \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"capability_key": "cap.retainer", "case_id": "case_9f21"}'
+```
+
+The response is `{"allowed": true, "reason": "...", "grant_id": 41}` or the equivalent with `allowed: false`.
+
+## The billing doors don't ask
+
+`billing-payments-api`'s retainer, time-entry, and invoice doors check nothing about tier — they run for any caller that sends a valid `X-Workspace-Id`, regardless of what that workspace is subscribed to. `identity-api`'s organization and case-team doors are the same: they enforce registry membership on `org_role` and `case_relationship`, never a capability tier. If your product needs a workspace on a lower tier to be refused before it can open a retainer account or send an invoice, that refusal has to happen in your own integration, calling `resolve` yourself before calling the billing door — not inside `billing-payments-api`.
+
+## A resolved "allowed" can still have no door behind it
+
+`cap.accounting-sync` is seeded in `entitlements-api`'s capability registry with the same shape as every other capability, so a workspace subscribed at Premium Professional gets `allowed: true` back from `resolve` for it. That answer describes the entitlement, not the build: `billing-payments-api` has no HTTP door for accounting sync at all, only an unwired `Protocol` and `Fake`. Treat a `resolve` check as telling you whether a workspace is *entitled* to a capability, never as proof that the capability has something to call.
+
+## What this means for your integration
+
+Call `resolve` for the exact capability you are about to act on, using the same `case_id` your next call will use if the capability is per-case — `cap.retainer`, `cap.time-capture`, `cap.client-invoicing`, and `cap.accounting-sync` are all per-case-enablable, so a grant can cover one case without covering every case in the workspace. Do this before the billing or identity door, not after, since neither will refuse the call on your behalf.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="entitlements-api" icon="book-open" href="/services/entitlements-api/index">
+    The service this resolve door lives on, and its own resolver internals.
+  </Card>
+  <Card title="Your firm overview" icon="briefcase" href="/your-firm/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+</Columns>
