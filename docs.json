@@ -168,6 +168,7 @@
             "group": "Core concepts",
             "pages": [
               "concepts/law-assembly-engine",
+              "attorneys/law-assembly",
               "concepts/roles"
             ]
           },
@@ -228,18 +229,22 @@
                 ]
               }
             ]
-          }
-        ]
-      },
-      {
-        "tab": "For Attorneys",
-        "groups": [
+          },
           {
-            "group": "Attorney guide",
+            "group": "Your firm",
             "pages": [
-              "attorneys/overview",
-              "attorneys/managing-clients",
-              "attorneys/law-assembly"
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "your-firm/attorneys/overview",
+                  "your-firm/attorneys/get-started",
+                  "your-firm/attorneys/add-a-client-or-colleague-to-a-case",
+                  "your-firm/attorneys/record-your-time-and-issue-a-client-invoice",
+                  "your-firm/attorneys/how-billing-moves-from-time-to-invoice",
+                  "your-firm/attorneys/youre-bringing-on-a-new-client-this-week",
+                  "your-firm/attorneys/troubleshooting"
+                ]
+              }
             ]
           }
         ]
@@ -878,6 +883,14 @@
     {
       "source": "/attorneys/marketplace-listing",
       "destination": "/marketplace/attorneys/create-and-activate-your-marketplace-listing"
+    },
+    {
+      "source": "/attorneys/overview",
+      "destination": "/your-firm/attorneys/overview"
+    },
+    {
+      "source": "/attorneys/managing-clients",
+      "destination": "/your-firm/attorneys/add-a-client-or-colleague-to-a-case"
     }
   ]
 }

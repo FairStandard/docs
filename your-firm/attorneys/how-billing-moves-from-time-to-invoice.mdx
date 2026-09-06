@@ -1,0 +1,33 @@
+---
+title: 'How billing moves from time to invoice'
+description: 'How captured time becomes billable, how an invoice is built and paid, and which parts of this flow are not connected yet.'
+kind: 'concept'
+audience: 'attorneys'
+section: 'your-firm'
+sidebarTitle: 'How billing works'
+---
+
+A client invoice in Vero is never a blank form you fill out from memory. It is built from time that has already been recorded, checked, and locked — the same record you would need if a client ever asked what an hour on their bill actually <span className="kw">covered</span>.
+
+## Time capture starts automatic, and stays correctable
+
+Case-linked work you do inside Vero — drafting, filing, sending a message — accrues time to that case on its own, no timer required. A manual entry covers anything that happens outside what Vero already tracks. Either way, an entry moves through the same states: captured, then submitted, then approved, then locked. Locking is a one-way step. A locked entry is never edited again — a mistake becomes a new entry that corrects it, carrying its own amount and its own record, while the original stays exactly as it was. That matters because a firm's billing history should be able to show, months later, exactly what happened and when, not a version of events that got quietly rewritten.
+
+## An invoice only pulls from time that has been checked
+
+Building an invoice means choosing a client and a case, then pulling in time entries and adding any manual lines. Only an entry that is approved or locked is eligible — a submitted entry that nobody has reviewed yet cannot go on a bill. That rule exists so a busy week of unreviewed time capture never turns into a bill before a person has actually looked at it. Once sent, an invoice can be voided if it went out wrong, but it is never deleted; the record that it existed stays.
+
+## Paying it, and what is not connected yet
+
+An invoice gets marked paid one of two ways: drawn from a client's retainer account, or recorded as having been paid outside Vero. A retainer account holds real money on record — every fund and draw is a permanent entry, and the balance is always the sum of them, never a number typed in separately. Neither payment path actually charges a card; recording that a payment happened and processing one are different jobs, and only the first exists today. The same is true a step further out: connecting your firm's outside accounting software so this billing history flows into your own books automatically is a named capability with nothing built behind it yet. Until it is, the entries you make in Vero still need to be entered into your own accounting system by hand.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Record your time and issue a client invoice" icon="clock" href="/your-firm/attorneys/record-your-time-and-issue-a-client-invoice">
+    Walk through the steps this flow describes.
+  </Card>
+  <Card title="Your firm overview" icon="briefcase" href="/your-firm/attorneys/overview">
+    See the full picture of what the Clients and Admin screens cover.
+  </Card>
+</Columns>
