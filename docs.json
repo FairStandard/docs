@@ -214,6 +214,18 @@
                   "marketplace/litigants/youve-decided-you-want-an-attorney",
                   "marketplace/litigants/troubleshooting"
                 ]
+              },
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "marketplace/attorneys/overview",
+                  "marketplace/attorneys/get-started",
+                  "marketplace/attorneys/create-and-activate-your-marketplace-listing",
+                  "marketplace/attorneys/respond-to-a-consultation-request",
+                  "marketplace/attorneys/how-consultation-requests-work-for-your-listing",
+                  "marketplace/attorneys/a-prospective-client-found-you-in-the-marketplace",
+                  "marketplace/attorneys/troubleshooting"
+                ]
               }
             ]
           }
@@ -227,8 +239,7 @@
             "pages": [
               "attorneys/overview",
               "attorneys/managing-clients",
-              "attorneys/law-assembly",
-              "attorneys/marketplace-listing"
+              "attorneys/law-assembly"
             ]
           }
         ]
@@ -851,6 +862,10 @@
     {
       "source": "/marketplace/legal-service-providers",
       "destination": "/marketplace/litigants/find-an-attorney-or-provider"
+    },
+    {
+      "source": "/attorneys/marketplace-listing",
+      "destination": "/marketplace/attorneys/create-and-activate-your-marketplace-listing"
     }
   ]
 }
