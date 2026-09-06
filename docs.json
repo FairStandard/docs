@@ -149,6 +149,18 @@
                   "messages/litigants/you-havent-heard-back-in-days",
                   "messages/litigants/troubleshooting"
                 ]
+              },
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "messages/attorneys/overview",
+                  "messages/attorneys/get-started",
+                  "messages/attorneys/message-a-client-across-your-caseload",
+                  "messages/attorneys/set-your-notification-preferences-across-your-caseload",
+                  "messages/attorneys/how-cooperation-and-violation-tracking-rolls-up-across-your-caseload",
+                  "messages/attorneys/a-clients-thread-has-gone-quiet-for-a-week",
+                  "messages/attorneys/troubleshooting"
+                ]
               }
             ]
           },
