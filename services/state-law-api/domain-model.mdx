@@ -104,6 +104,71 @@ jurisdiction.
 _Avoid_: entitlement (that judgment belongs to the caller, never made
 here)
 
+**Provision**:
+One right, rule, or restriction a statute or standing order sets out —
+a `provision_key` (assigned by the writer, never the server, matching
+case-api's field of the same name), title, text, summary, category,
+whether it `supersedable` by a later order, an effective window,
+the statute citations it rests on, and an optional list of detection
+rules an analysis pass can check a case's records against. The shared
+record shape (`ProvisionRecord`) behind both provision sets below. See
+ADR 0006.
+_Avoid_: statute (a statute is the whole codified section; a provision
+is one right or rule a statute, or a standing order, grants — the two
+overlap but are not the same word), rule (reserved for deadline rules
+and court rules, both distinct content types above)
+
+**Provision set**:
+One published, versioned batch of provisions drawn from statute for one
+(jurisdiction, practice area) — `StatuteProvisionSetVersion`. Same
+versioned-publish idiom as every other content type here: a publish
+inserts the next version, never edits one in place. Every detection
+rule on every provision is checked against analysis-api's condition-type
+registry, and whichever parameter names a mandated platform for that
+`condition_type` (`communication_channel`'s `required_platform` or
+`platform_check`'s `expected`) against packs-api's pack vocabulary,
+before the publish writes anything. See ADR 0006.
+_Avoid_: statute set, statute vault (that name is taken — the plain
+`Statute` table above is the statute vault; a provision set is a
+distinct, higher-level content type)
+
+**Standing order set**:
+One published, versioned batch of provisions drawn from a county
+court's standing order, for one (jurisdiction, county, practice area) —
+`StandingOrderSetVersion`. Same shape and validation as a provision
+set, scoped one level narrower by county. See ADR 0006.
+_Avoid_: local rule, county rule (both suggest a court-rule-set entry,
+a different content type above)
+
+**County**:
+One county within a jurisdiction this service holds content for: a
+name and the default time zone a case in that county is given from
+content, never hardcoded. A small, unpartitioned registry table
+(`County`), same reasoning as the jurisdiction registry, keyed
+uniquely by (jurisdiction, county). `default_timezone` must be a real
+IANA zone name (`_validate_county`, store.py, checked against
+`zoneinfo.available_timezones()`) — a bulk-load with a bad zone name
+is rejected with a `422` rather than becoming a bad suggestion
+case-api later hands to a user. See ADR 0006.
+_Avoid_: assuming every jurisdiction's counties share one time zone —
+Texas alone spans two (El Paso and Hudspeth sit in Mountain time; the
+rest of the state is Central)
+
+**Supersedable**:
+Whether a court order can limit or override a provision — the
+`supersedable` boolean every provision carries. `true` unless a
+jurisdiction's statute grants a right no order can touch. This is a
+per-provision fact this service carries as data; which layer's
+provisions are actually in force at a given moment is decided by the
+analysis-deepening pass's governing-framework model, not here. The
+Texas seed carries `supersedable: true` on every provision — a
+researched finding that Texas Family Code chapter 153 does not grant
+an unconditionally non-supersedable right, not an unreviewed default.
+See ADR 0006.
+_Avoid_: waivable (that word describes a party's choice; supersedable
+describes a court's authority to order around the provision — a
+different question)
+
 ## Access discipline
 
 State law is shared content, not workspace-owned data (ADR 0003). No
@@ -120,4 +185,87 @@ unregistered `practice_area` is rejected with a `422`. This is this
 service's first outbound HTTP call; every other content type
 (statutes, holidays, court rules, pro bono eligibility) is unaffected.
 See `packs-api`'s own CONTEXT.md for the registry itself.
+
+## Detection rules are validated against analysis-api and packs-api
+
+Added 2026-09-05 (ADR 0006, FS-986). A provision's detection rule
+carries a `condition_type` (checked against analysis-api's
+condition-type registry through a new `ConditionTypesReader` seam,
+`condition_types_reader.py`), a non-empty `rule_id` unique within its
+own provision's rule list, and, when its parameters name a mandated
+platform, that platform is checked against the publishing practice
+area's pack vocabulary through `PacksReader.communication_platforms`
+(an extension of the ADR 0005 seam, not a new one). Which parameter
+names the platform depends on the condition_type -
+`communication_channel`'s `required_platform` and `platform_check`'s
+`expected` both get checked; `store.py`'s
+`PLATFORM_PARAMETER_BY_CONDITION_TYPE` is the small, local,
+hand-maintained list of which parameter to check per condition_type,
+because analysis-api's registry entry has no field that names it.
+`communication_platforms` compares against `wire_value`, not each
+vocabulary entry's internal `key` - analysis-api's evaluators compare
+a mandated platform against `record.source_type`, which carries the
+wire value. All of these checks run before a statute provision set or
+standing order set publish writes anything; an unknown condition type,
+invalid parameters, an empty or duplicated rule_id, or a disallowed
+platform is rejected with a `422`.
+
+Sibling contract tests (`tests/sibling_specs.py`, built on
+`servicekit.testing.siblings`) run analysis-api's and packs-api's real
+apps as subprocesses in their own `uv`-managed venvs and talk to them
+over real HTTP — never imported into this interpreter, so their
+dependencies never clash with this service's. Locally these tests skip
+when `ANALYSIS_API_PATH` / `PACKS_API_PATH` are unset; in CI,
+`REQUIRE_SIBLINGS=1` turns a missing or broken sibling into a hard
+failure, and `ci.yml` checks out both siblings at pinned commits before
+running the suite — drift in either sibling's real contract door fails
+this service's CI, not just a hand-copied fake of its shape.
+
+### Platform vocabulary (ruled 2026-09-05)
+
+These words are platform structure, shared by every context. Each is owned by
+one context and defined there; use them exactly as defined and do not coin a
+local synonym. Rule `finding-and-pattern-are-platform-structure` in the canon.
+
+**Record** (owned by evidence):
+Anything a case holds as evidence: a call, a message, a money movement, a
+document, a recording, a photo, an export — every file type.
+_Avoid_: file, item, event, upload
+
+**Finding** (owned by analysis):
+One detected event on one record: what was measured and what it is consistent
+with, never a legal conclusion.
+_Avoid_: violation, detection, result, verdict, conduct event
+
+**Pattern** (owned by analysis):
+A course of conduct: many findings and dated events for one party over a
+period, under one category, with its own provenance, review history, and
+time-ordered trail. Made by a pack's pattern rule or assembled by a person;
+both have the same shape.
+_Avoid_: pattern group, cluster, campaign
+
+**Category** (pack content):
+The practice-area pack's catalog of the kinds of behaviour a finding or
+pattern is filed under. The platform knows there is a catalog; the pack says
+what is in it.
+_Avoid_: conduct category, conduct type, a hard-coded enum
+
+**Frame** (pack content):
+A named lens a pack attaches to a pattern kind — coercive control, restrictive
+gatekeeping — carrying its source and its evidentiary standing. A frame
+explains a pattern; it never changes what the findings measured.
+_Avoid_: diagnosis, syndrome, label
+
+**Conduct**:
+Not a platform word. Texas statute uses it to name specific offences; packs
+may use it inside their own content only.
+_Avoid_: conduct, conduct event, conduct type (in any core module, schema, or glossary)
+
+**Expression**:
+The text a regex-based detection rule matches against a record. The
+condition-type door names this parameter `expression`; it used to be
+called `pattern`, and that word now names the course-of-conduct unit
+instead. Seeded rules in this service are renamed to match in a follow-up
+after analysis pull request 2 lands.
+_Avoid_: pattern (for the regex text), regex (bare)
 

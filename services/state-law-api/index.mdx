@@ -7,9 +7,12 @@ description: "FairStandard's jurisdiction-law content service: the supported- ju
 FairStandard's jurisdiction-law content service: the supported-
 jurisdictions registry, the statute vault with its bulk content-upload
 door (ADR 0001), and versioned published content per jurisdiction -
-deadline rules with holidays, court rules, process definitions, and pro
-bono eligibility. Practice-area keys are validated against packs-api at
-publish time (ADR 0005). See `CONTEXT.md` for the domain glossary and
+deadline rules with holidays, court rules, process definitions, pro
+bono eligibility, statutory and standing-order provision sets, and a
+county registry. Practice-area keys are validated against packs-api at
+publish time (ADR 0005); a provision's detection rules are validated
+against analysis-api's condition-type registry and packs-api's pack
+vocabulary (ADR 0006). See `CONTEXT.md` for the domain glossary and
 `docs/adr/` for the decisions this service is built on.
 
 ## Architecture
@@ -59,6 +62,58 @@ publish time (ADR 0005). See `CONTEXT.md` for the domain glossary and
   thresholds and case-kind rules as structured content. Versioned per
   jurisdiction; entitlements-api's pro-bono grants are the named future
   consumer (seam named in ADR 0004, not built here).
+
+- **Statute provision set** (`models.py::StatuteProvisionSetVersion`) —
+  hash-partitioned by jurisdiction, same versioned-publish idiom as the
+  deadline rule vault. Carries the rights and rules a statute grants
+  for one (jurisdiction, practice area) as a list of `ProvisionRecord`s
+  — `provision_key`, title, text, summary, category, whether the
+  provision `supersedable`, an effective window, statute
+  references, and optional detection rules. `provision_key` is
+  assigned by the writer, never the server, and matches case-api's
+  field name of the same purpose. `store.py::Store.publish_statute_provision_set`
+  validates every provision's shape and refuses a duplicate
+  `provision_key` within a publish, and validates every detection
+  rule's `condition_type` against analysis-api's condition-type
+  registry and, per `PLATFORM_PARAMETER_BY_CONDITION_TYPE`, whichever
+  parameter names a mandated platform for that `condition_type`
+  (`communication_channel`'s `required_platform` or
+  `platform_check`'s `expected`) against packs-api's pack vocabulary
+  (ADR 0006) before writing anything. Publishing content
+  whose provisions have the same canonical content as the current
+  version's (field order ignored, provision order and every field
+  value significant, `source_note` ignored) is a no-op: it returns the
+  current version instead of writing a new one (see "Idempotent
+  publishing" below).
+- **Standing order set** (`models.py::StandingOrderSetVersion`) — the
+  same provision shape and validation, scoped one level narrower to
+  (jurisdiction, county, practice area), for the standing orders a
+  county's courts enter in every case of that kind.
+- **County registry** (`models.py::County`) — a small, unpartitioned
+  table (same reasoning as the jurisdiction registry): one row per
+  (jurisdiction, county) carrying the county's default time zone, so a
+  case in that county gets its clock from content, never a hardcoded
+  assumption.
+
+### Idempotent publishing
+
+Publishing a statute provision set or a standing order set whose
+provisions have the same canonical content (field order ignored,
+provision order and every field value significant, `source_note`
+ignored) as the current version's is a no-op: the store returns the
+current version unchanged and writes no new row. Only content that
+actually changed gets a new version. The rule is a `sort_keys=True`
+canonical JSON hash of the provisions list, computed by
+`servicekit.canonical_content_hash` (`source_note` excluded) and used
+through `publish_versioned(idempotent_on=...)` in
+`store.py::Store._publish_provision_set` — reordering the fields
+inside one provision does not change the
+hash, but reordering the provisions themselves does, because that
+list's own order is part of what gets hashed. This matters most for
+`seed.py` (below) and for any other repeated, automated publish —
+running the same publish twice never leaves a trail of identical
+versions behind. See ADR 0006 for the full rule and why it lives in
+the store rather than above it.
 
 No `X-Workspace-Id` anywhere: state law is shared content, not
 workspace-owned data (ADR 0003).
@@ -110,6 +165,42 @@ Internal only:
 - `GET /v1/pro-bono-eligibility/{jurisdiction}` — the current
   (highest-version) eligibility criteria. `404` when nothing has been
   published.
+- `POST /v1/statute-provision-sets/publish` — `{jurisdiction,
+  practice_area, provisions: [...], source_note}` in, `{jurisdiction,
+  practice_area, version, published_at}` out. `422` when a provision's
+  shape is invalid, a `provision_key` is duplicated within the
+  publish, a detection rule's `condition_type` is unknown or its
+  parameters fail the schema analysis-api serves for it, a
+  mandated platform (`communication_channel`'s `required_platform` or
+  `platform_check`'s `expected`) is not in the practice area's pack
+  vocabulary, or `practice_area` is not registered with packs-api.
+  `201` on both a
+  real publish and a no-op republish — check whether `version` changed
+  from your last call to tell them apart.
+- `GET /v1/statute-provision-sets/{jurisdiction}/{practice_area}/current`
+  — the current (highest-version) statute provision set. `404` when
+  nothing has been published.
+- `GET /v1/statute-provision-sets/{jurisdiction}/{practice_area}/{version}`
+  — one pinned version of a statute provision set. `404` when that
+  version does not exist.
+- `POST /v1/standing-order-sets/publish` — `{jurisdiction, county,
+  practice_area, provisions: [...], source_note}` in, `{jurisdiction,
+  county, practice_area, version, published_at}` out. Same validation,
+  error shapes, and idempotent-republish behavior as a statute
+  provision set publish.
+- `GET /v1/standing-order-sets/{jurisdiction}/{county}/{practice_area}/current`
+  — the current (highest-version) standing order set. `404` when
+  nothing has been published.
+- `GET /v1/standing-order-sets/{jurisdiction}/{county}/{practice_area}/{version}`
+  — one pinned version of a standing order set. `404` when that
+  version does not exist.
+- `POST /v1/counties/bulk` — `{jurisdiction, counties: [{county,
+  default_timezone}]}` in, `{received, written}` out. `422` when a
+  county entry is missing `county` or `default_timezone`, or has a
+  `default_timezone` that is not an IANA zone name
+  (`zoneinfo.available_timezones()`).
+- `GET /v1/counties/{jurisdiction}` — every county on file for one
+  jurisdiction, with its default time zone.
 
 ## Setup
 
@@ -125,7 +216,8 @@ Tests spin up a real `postgres:18` container via `testcontainers` — no
 Postgres install needed locally beyond Docker running.
 
 Configuration is environment-driven under the `STATE_LAW_` prefix
-(`settings.py`): `STATE_LAW_DATABASE_URL`, `STATE_LAW_PACKS_API_URL`.
+(`settings.py`): `STATE_LAW_DATABASE_URL`, `STATE_LAW_PACKS_API_URL`,
+`STATE_LAW_ANALYSIS_API_URL` (defaults to `http://localhost:8400`).
 Migrations are real alembic (`uv run alembic upgrade head` against the
 same `STATE_LAW_DATABASE_URL`); the chain creates the hash partitions
 too, and `tests/test_migrations.py` runs it both directions against
@@ -151,4 +243,69 @@ Texas divorce-suit process (Texas Family Code, TRCP 99) for tests only
 `tests/fixtures/tx_pro_bono_eligibility.json` is a small hand-authored
 sample of Texas legal-aid eligibility criteria for tests only — not the
 full eligibility vault.
+
+The statute-provision-set and standing-order-set tests load their
+content straight from `seed/tx-family-law.json` and
+`seed/tx-standing-orders.json` (below) instead of keeping a second,
+separate fixture copy — FS-986's gate-b review found the two fixture
+files that used to live under `tests/fixtures/` had drifted into a
+byte-identical mirror of the seed content, so they were deleted and the
+tests now read the one real copy directly (`tests/conftest.py`'s
+`FAMILY_LAW_PROVISIONS_FIXTURE_PATH` / `FAMILY_LAW_STANDING_ORDER_FIXTURE_PATH`).
+See the seed files' own `source_note` fields and ADR 0006 for the
+research trail behind each one.
+
+`tests/fixtures/tx_counties.json` is a hand-authored sample of Texas's
+most populous counties and their default time zones, plus the two
+counties (El Paso and Hudspeth) the federal Uniform Time Act places in
+Mountain time rather than Central. Not the full 254-county roster.
+
+## Seeding a real Texas launch (`seed/`, `seed.py`)
+
+`tests/fixtures/*` above are small, hand-picked samples for tests only.
+The `seed/` directory holds the real content a Texas launch needs:
+
+- `seed/tx-family-law.json` — ten verified Texas Family Code chapter 153
+  provisions, each with its own statute URL and section in its
+  `statute_refs`.
+- `seed/tx-standing-orders.json` — Denton County's family-district-
+  courts standing order, a real, currently effective order (effective
+  February 27, 2025) cited to its public source. An earlier version of
+  this file held a fabricated Harris County sample with an invented
+  platform-detection rule; FS-986's gate-b review caught it (Harris
+  County has no county-wide family-law standing order) and this file
+  now carries the real Denton County text instead.
+- `seed/tx-counties.json` — all 254 Texas counties and their default
+  time zone, cited to the U.S. Census Bureau's FIPS reference file.
+
+Run `uv run python seed.py` against a real `STATE_LAW_DATABASE_URL`
+(with `STATE_LAW_PACKS_API_URL` and `STATE_LAW_ANALYSIS_API_URL`
+pointing at running siblings) to publish all three. Every publish door
+it calls is content-idempotent (see "Idempotent publishing" above), so
+running it again after a launch is safe — it republishes nothing that
+has not actually changed.
+
+**Launch gate (spec section 8):** a jurisdiction is not usable for
+cases until its statutory provision set, its county list, and its
+counties' time zones are all published. `seed.py` is what closes that
+gate for Texas; a new jurisdiction repeats the same three publishes
+with its own content before any case work in that jurisdiction can
+begin.
+
+## Sibling contract tests
+
+`tests/sibling_specs.py` defines the `SiblingSpec` for each real sibling
+this suite's contract tests run against - analysis-api and packs-api -
+and the session fixtures built on top of them. The actual spin-up,
+health-check, and `REQUIRE_SIBLINGS` machinery lives in the shared
+`servicekit.testing.siblings` module (the `testing` extra; see
+servicekit's `docs/adr/0008`), not a hand-rolled copy in this repo:
+`sibling_app(spec)` runs the sibling's real app as a subprocess in its
+own `uv`-managed virtual environment and talks to it over real HTTP —
+never imported into this interpreter, so their dependencies never clash
+with this service's. Locally, set `ANALYSIS_API_PATH` and
+`PACKS_API_PATH` to local checkouts of each sibling to run these tests
+for real; unset, they skip. In CI (`ci.yml`), both siblings are checked
+out at pinned commits and `REQUIRE_SIBLINGS=1` turns a missing or broken
+sibling into a hard failure rather than a skip.
 

@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "AccountRef": {
+        "description": "Which financial account a transaction posted to.",
+        "properties": {
+          "account_type": {
+            "title": "Account Type",
+            "type": "string"
+          },
+          "institution": {
+            "title": "Institution",
+            "type": "string"
+          },
+          "mask": {
+            "title": "Mask",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          }
+        },
+        "required": [
+          "institution",
+          "account_type",
+          "mask"
+        ],
+        "title": "AccountRef",
+        "type": "object"
+      },
       "AuditAppend": {
         "properties": {
           "action": {
@@ -85,6 +120,27 @@
       "RecordIn": {
         "description": "The write contract. Table rows skip validation, so the API validates\nhere \u2014 datetimes and the record type are real types by the time a row\nis built.",
         "properties": {
+          "account_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
           "analytics": {
             "additionalProperties": true,
             "default": {},
@@ -128,9 +184,46 @@
             "title": "Case Id",
             "type": "string"
           },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
           "content_hash": {
             "title": "Content Hash",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "debit",
+                  "credit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
           },
           "duration_seconds": {
             "anyOf": [
@@ -172,7 +265,8 @@
           "record_type": {
             "enum": [
               "call",
-              "message"
+              "message",
+              "financial_transaction"
             ],
             "title": "Record Type",
             "type": "string"
@@ -598,6 +692,22 @@
               "default": 100,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "record_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Record Type"
             }
           },
           {

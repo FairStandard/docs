@@ -18,7 +18,8 @@ mechanics every service in this platform needs regardless of what it
 does:
 
 - **Talking to another service's HTTP API** without every reader
-  hand-writing its own retry/backoff/error-translation ceremony.
+  hand-writing its own retry/backoff/error-translation ceremony, or its
+  own `client`/`retries`/`_get_json` plumbing on top of it.
 - **Running background work off Redis Streams** with ack-on-return,
   retry-on-raise, and dead-lettering past a retry budget — without every
   service re-deriving that state machine.
@@ -28,7 +29,8 @@ does:
   re-deriving the same offset loop.
 - **Publishing an insert-only, versioned row** (a pack, a module, a rule
   set) without every store re-deriving the same bounded-retry race fix
-  — or, as happened once, silently dropping it.
+  — or, as happened once, silently dropping it — and, optionally, without
+  every store re-deriving its own content-hash idempotence check on top.
 - **Reading `X-Workspace-Id`/`X-Caller-Id`** in a FastAPI service without
   every `main.py` redefining the same `Annotated` alias.
 
@@ -51,12 +53,13 @@ uv run pre-commit run --all-files
 ```
 
 Core dependencies are only `httpx` and `redis` — a service that never
-touches FastAPI or sqlalchemy installs neither. Two optional extras add
-the rest:
+touches FastAPI, sqlalchemy, or the sibling test harness installs none of
+them. Three optional extras add the rest:
 
 ```bash
 uv add "servicekit[fastapi]"     # servicekit.fastapi's header deps
 uv add "servicekit[sqlalchemy]"  # publish_versioned's default retry_on
+uv add "servicekit[testing]"     # servicekit.testing.siblings' testcontainers + pytest
 ```
 
 `servicekit/__init__.py` never imports `servicekit.fastapi` or
@@ -68,18 +71,24 @@ by reading `pyproject.toml` and by re-importing the package with a clean
 
 ```
 servicekit/
-├── doorway.py      # Rejected / Unavailable, call_with_retries, doorway_errors
-├── streams.py      # StreamQueue, Codec protocol, DLQ handling
-├── codec.py         # dataclass_codec
-├── pagination.py    # fetch_all_pages
-├── versioning.py    # publish_versioned, VersionContention
-├── fastapi.py        # WorkspaceId, CallerId  (opt-in: import explicitly)
-└── testing.py         # write_raw_for_tests, reset_for_tests  (tests only)
+├── doorway.py         # Rejected / Unavailable, call_with_retries, doorway_errors, HttpReaderBase
+├── streams.py         # StreamQueue, Codec protocol, DLQ handling
+├── codec.py           # dataclass_codec
+├── pagination.py      # fetch_all_pages
+├── versioning.py      # publish_versioned, VersionContention
+├── fastapi.py         # WorkspaceId, CallerId  (opt-in: import explicitly)
+└── testing/            # tests only
+    ├── __init__.py      # write_raw_for_tests, reset_for_tests
+    └── siblings.py       # SiblingSpec, sibling_app, require_or_skip (opt-in: needs the `testing` extra)
 ```
 
 `servicekit/__init__.py` re-exports everything above **except**
-`fastapi.py` and `testing.py` — those two are opt-in submodules, never
-pulled in as a side effect of `import servicekit`.
+`fastapi.py` and `testing/` — those are opt-in, never pulled in as a side
+effect of `import servicekit`. `servicekit.testing` (the package) never
+imports `servicekit.testing.siblings` either, so `reset_for_tests`/
+`write_raw_for_tests` cost nothing beyond `redis` even when the `testing`
+extra isn't installed — only an explicit
+`from servicekit.testing.siblings import ...` needs it.
 
 ### The doorway contract (`doorway.py`)
 
@@ -121,6 +130,177 @@ async def detect(client, file_bytes: bytes) -> str:
 A successful attempt's return value — including `None`, the shape
 `identity-api`-style readers use for "no such session" — passes through
 `.call()` untouched; it is never mistaken for a failure.
+
+`base` is optional — leave it unset and `doorway_errors` builds
+`FilesReaderError` for you, named `f"{name}ReaderError"` and exposed as
+`kit.error`, so the three-line local error class above doesn't have to be
+hand-written either:
+
+```python
+_kit = doorway_errors(name="Files")
+FilesReaderError = _kit.error
+FilesRejected = _kit.rejected
+FilesUnavailable = _kit.unavailable
+```
+
+Passing `base` explicitly still works exactly as before — `kit.error` is
+just that same class handed back.
+
+### HttpReaderBase: the client/retries/JSON ceremony every Http reader repeats
+
+Five sibling-service HTTP readers hand-write the same
+`Http<Name>Reader.__init__(client, *, retries=3)` plus a
+`_get_json`/inline-`attempt`-and-`_kit.call` pattern around every GET, on
+two branches open right now: case-api's `packs.py`, `state_law.py`,
+`condition_types.py` on branch `feature/fs-987` (case-api PR
+[#9](https://github.com/FairStandard/case-api/pull/9)), and
+state-law-api's `packs_reader.py`, `condition_types_reader.py` on branch
+`feature/fs-986` (state-law-api PR
+[#10](https://github.com/FairStandard/state-law-api/pull/10)). Neither
+branch is merged yet, so none of those five files are on `main` in either
+repo today — the "How to adopt" example below instead rewrites a reader
+that already is, so it can be checked against `main` directly.
+`HttpReaderBase` is that ceremony, collapsed to one base class a reader
+subclasses:
+
+```python
+from servicekit import HttpReaderBase, doorway_errors
+
+_kit = doorway_errors(name="Files")
+FilesRejected = _kit.rejected
+FilesUnavailable = _kit.unavailable
+
+
+class HttpFilesReader(HttpReaderBase):
+    def __init__(self, client, *, retries: int = 3) -> None:
+        super().__init__(
+            client, _kit, retries=retries, unavailable="files-api unreachable"
+        )
+
+    async def detect(self, file_bytes: bytes) -> str:
+        payload = await self._post_json("/v1/detect", json={"file": file_bytes})
+        return payload["format"]
+```
+
+`_get_json(path, *, params=None, headers=None, absent_on=frozenset())`
+and `_post_json(path, *, json=None, headers=None, absent_on=frozenset())`
+each wrap one request in the kit's retry-and-translate `.call()` and
+return the parsed JSON body:
+
+- `params` (GET only) is forwarded on every attempt — analysis-api's
+  `HttpUpstream.get_record` (`upstream.py`, `main`) passes a query param
+  on every GET; `_post_json` has no `params` — no reader anywhere posts a
+  query string alongside a JSON body.
+- `headers` is forwarded on every attempt on both methods — intake-api's
+  `HttpEvidenceStore` (`evidence.py`, `main`) sends a per-call
+  `X-Workspace-Id` on its POSTs, and messaging-api's `HttpIdentityReader`
+  (`identity.py`, `main`) sends a per-call `Authorization` bearer token on
+  its GET.
+- `absent_on` is the set of status codes that mean "this doesn't exist,"
+  not "this call failed": a response whose status is in that set returns
+  `None` instead of raising. This is the same check state-law-api's
+  `packs_reader.py` (`feature/fs-986`) and messaging-api's `identity.py`
+  (`main`) already do by hand, checking the status before
+  `raise_for_status`.
+- **Escape hatch:** anything neither method covers — a multipart upload
+  (intake-api's `files_reader.py`, `main`, posts `files=`/`data=`, not a
+  JSON body) or any other non-JSON request or response — calls
+  `self._kit.call(attempt, ...)` directly instead of going through
+  `_get_json`/`_post_json`, exactly as every reader does today:
+
+  ```python
+  class HttpFilesReader(HttpReaderBase):
+      async def extract(self, filename: str, file_bytes: bytes) -> dict:
+          async def attempt() -> dict:
+              response = await self._client.post(
+                  "/v1/extract", files={"file": (filename, file_bytes)}
+              )
+              response.raise_for_status()
+              return response.json()
+
+          return await self._kit.call(attempt, retries=self._retries)
+  ```
+
+A reader that needs to special-case one status without wanting the
+plain "return `None`" shape `absent_on` gives — case-fs987's `packs.py`'s
+`HttpPacksReader` treats a 404 from `/packs/current` as "no published
+pack" rather than a failure, but needs `False`/an empty set back, not
+`None` — still can: catch the kit's own `rejected` alias around the call
+and inspect `.status_code`, exactly as every reader does today.
+
+**What stays in each service, on purpose:** the `Protocol` naming the
+reader's contract and the `Fake<Name>Reader` used in tests never move
+into servicekit — each service's Protocol is its own contract with its
+sibling, and a shared one would either force every consumer onto the
+union of every reader's methods or silently pick one service's shape as
+canonical. See
+`docs/adr/0009-a-reader-base-not-a-third-copy-of-the-http-ceremony.md`
+for the full reasoning and the two readers' pre-existing drift this
+fixes.
+
+#### How to adopt: case-api `main`'s `HttpPacksReader` rewritten on the base
+
+Before (case-api's `packs.py`, on `main` today —
+`HttpPacksReader.validate_phase` hand-writes the `attempt`/`_kit.call`
+pair and its own 404-means-"no published pack" check):
+
+```python
+class HttpPacksReader:
+    def __init__(self, client: httpx.AsyncClient, *, retries: int = 3) -> None:
+        self._client = client
+        self._retries = retries
+
+    async def validate_phase(self, practice_area: str, phase: str) -> bool:
+        async def attempt() -> dict[str, Any]:
+            response = await self._client.get(
+                f"/internal/practice-areas/{practice_area}/packs/current"
+            )
+            response.raise_for_status()
+            return response.json()
+
+        try:
+            body = await _kit.call(
+                attempt, retries=self._retries, unavailable="packs-api unreachable"
+            )
+        except PacksRejected as rejected:
+            if rejected.status_code == 404:
+                # No published pack (or unregistered practice area):
+                # nothing validates - strict, not permissive.
+                return False
+            raise
+        lifecycle = body.get("sections", {}).get("lifecycle_phases", [])
+        return phase in {entry["key"] for entry in lifecycle}
+```
+
+After — the Protocol, the Fake, `PacksReaderError`, and the module-level
+`_kit = doorway_errors(base=PacksReaderError, name="Packs")` all stay
+exactly as they are; only the `Http` class's plumbing moves onto the
+base, and the hand-written 404 check becomes `absent_on`:
+
+```python
+class HttpPacksReader(HttpReaderBase):
+    def __init__(self, client: httpx.AsyncClient, *, retries: int = 3) -> None:
+        super().__init__(
+            client, _kit, retries=retries, unavailable="packs-api unreachable"
+        )
+
+    async def validate_phase(self, practice_area: str, phase: str) -> bool:
+        body = await self._get_json(
+            f"/internal/practice-areas/{practice_area}/packs/current",
+            absent_on=frozenset({404}),
+        )
+        if body is None:
+            # No published pack (or unregistered practice area):
+            # nothing validates - strict, not permissive.
+            return False
+        lifecycle = body.get("sections", {}).get("lifecycle_phases", [])
+        return phase in {entry["key"] for entry in lifecycle}
+```
+
+`validate_phase` goes from a nine-line `attempt`/`_kit.call`/`try`/`except`
+block to a one-line `_get_json` call plus a plain `if body is None` check;
+`__init__` goes from storing `_client`/`_retries` itself to one
+`super().__init__(...)` call.
 
 ### The stream engine (`streams.py`)
 
@@ -280,6 +460,58 @@ pass it explicitly for a store with a different ORM or no sqlalchemy
 installed. Exhausting the retry budget raises `VersionContention`, never
 a bare `RuntimeError`.
 
+#### Idempotent publishing: `canonical_content_hash` and `idempotent_on`
+
+state-law-api's `publish_statute_provision_set`,
+`publish_standing_order_set`, and the private `_canonical_content_hash`
+helper they duplicate (store.py) live on branch `feature/fs-986`
+(state-law-api PR
+[#10](https://github.com/FairStandard/state-law-api/pull/10)), not yet on
+state-law-api's `main`. Each of the two publish functions hand-rolls the
+same "republishing identical content is a no-op" check — a private
+content-hash helper and a look-up-then-compare branch, duplicated
+twice. `canonical_content_hash(payload)` is that hash, promoted to a
+reusable pure function (JSON-canonicalized with `sort_keys=True`, then
+sha256, so a database round-trip's own field reordering never looks
+like changed content); `idempotent_on` is that branch, folded into
+`publish_versioned`'s own retry loop:
+
+```python
+from servicekit import canonical_content_hash, publish_versioned
+
+new_hash = canonical_content_hash(provisions)
+
+async def _current():
+    async with sessions() as session:
+        return (await session.exec(select(Model).where(...).order_by(...).limit(1))).first()
+
+async def _idempotent_on():
+    current = await _current()
+    if current is not None and canonical_content_hash(current.provisions) == new_hash:
+        return current
+    return None
+
+async def _publish_once():
+    async with sessions() as session:
+        current = await _current()
+        row = Model(version=(current.version if current else 0) + 1, provisions=provisions, ...)
+        session.add(row)
+        await session.commit()
+        return row
+
+row = await publish_versioned(_publish_once, idempotent_on=_idempotent_on)
+```
+
+`idempotent_on` is awaited on every retry attempt, not just once before
+the loop starts: if this attempt's insert loses a version race to
+another publisher who published the identical content, the retry
+re-checks and returns that publisher's row instead of writing a
+duplicate. A match short-circuits — `publish_once` never runs, so no
+insert and no version bump; `None` falls through to `publish_once`
+exactly as when `idempotent_on` isn't passed at all. See
+`docs/adr/0009-a-reader-base-not-a-third-copy-of-the-http-ceremony.md`
+for why this landed alongside the reader-base work.
+
 ### Workspace/caller header DI (`fastapi.py`, opt-in)
 
 ```python
@@ -290,7 +522,7 @@ from servicekit.fastapi import CallerId, WorkspaceId
 async def feed(workspace_id: WorkspaceId, caller_id: CallerId, store: StoreDep): ...
 ```
 
-### Test helpers (`testing.py`, tests only)
+### Test helpers (`testing/`, tests only)
 
 ```python
 from servicekit.testing import reset_for_tests, write_raw_for_tests
@@ -298,6 +530,78 @@ from servicekit.testing import reset_for_tests, write_raw_for_tests
 await reset_for_tests(queue)  # clears stream, DLQ, error hash
 await write_raw_for_tests(queue, {"bad": "field"})  # simulates a buggy producer
 ```
+
+### Sibling test harness (`testing/siblings.py`, opt-in via the `testing` extra)
+
+Starts a sibling service's real app — in its own process, over real HTTP —
+for a contract test that must catch drift at a doorway between two
+services, replacing a hand-rolled `sibling_apps.py` in every consumer that
+needs one:
+
+```python
+import pytest_asyncio
+from servicekit.testing.siblings import SiblingSpec, sibling_app
+
+PACKS_API = SiblingSpec(
+    name="packs-api",
+    path_env_var="PACKS_API_PATH",  # skips (or fails under REQUIRE_SIBLINGS=1) when unset
+    database_url_env="PACKS_DATABASE_URL",
+    setup_commands=[["python", "-c", SEED_SCRIPT]],  # run in order; empty by default
+)
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def packs_api_client():
+    async with sibling_app(PACKS_API) as base_url:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            yield client
+```
+
+`sibling_app` resolves the checkout path from `path_env_var`, picks a
+free port, spins up a fresh `testcontainers` Postgres automatically when
+`database_url_env` is set, runs `setup_commands` in order via
+`uv run --project <path>`, starts the sibling as `uvicorn main:app` (every
+sibling here is served that way), polls `health_path` until it answers,
+and yields the base URL — tearing everything down on exit.
+`require_or_skip(spec)` is the REQUIRE_SIBLINGS switch on its own, for a
+caller that only needs the resolved path.
+
+Some setup only works once the app itself is answering HTTP — seeding
+through the sibling's own write doors rather than a subprocess script.
+`after_start` covers that: an optional async callback run with the base
+URL once the sibling is healthy, before the base URL is handed to the
+test:
+
+```python
+async def seed_a_jurisdiction(base_url: str) -> None:
+    async with httpx.AsyncClient(base_url=base_url) as client:
+        response = await client.post(
+            "/v1/jurisdictions", json={"code": "TX", "name": "Texas"}
+        )
+        response.raise_for_status()
+
+
+STATE_LAW_API = SiblingSpec(
+    name="state-law-api",
+    path_env_var="STATE_LAW_API_PATH",
+    database_url_env="STATE_LAW_DATABASE_URL",
+    setup_commands=[["python", "-c", SCHEMA_SCRIPT]],
+    after_start=seed_a_jurisdiction,
+)
+```
+
+Any exception `after_start` raises — an `httpx` error included, not just
+`RuntimeError` — goes through the same REQUIRE_SIBLINGS switch as any
+other startup failure: skipped locally, failed hard under
+`REQUIRE_SIBLINGS=1`, with the sibling's name, the error, and its captured
+stdout/stderr in the message. Once the base URL has actually been yielded
+to the test body, `sibling_app` gets out of the way — an exception the
+test itself raises propagates untouched.
+
+See `docs/adr/0008-a-shared-sibling-test-harness-not-two-copies.md` for
+why this lives in the toolkit instead of a third copy-paste, and for why
+`app_target`, `extra_env`, and a shared `database_url` parameter were cut
+from the first cut of this API.
 
 ## Usage: adoption
 
@@ -309,6 +613,54 @@ into its consumers, pinned to the commit SHA this build merged as.
 
 ## Changelog
 
+- **0.3.3** (FS-986/FS-987 follow-up, 2026-09-05) — added
+  `HttpReaderBase`: the `client`/`retries`/`_get_json`/`_post_json`
+  ceremony every `Http<Name>Reader` hand-writes on two open, unmerged
+  branches (case-api's `packs.py`, `state_law.py`, `condition_types.py`
+  on `feature/fs-987`, case-api PR
+  [#9](https://github.com/FairStandard/case-api/pull/9); state-law-api's
+  `packs_reader.py`, `condition_types_reader.py` on `feature/fs-986`,
+  state-law-api PR
+  [#10](https://github.com/FairStandard/state-law-api/pull/10)),
+  collapsed to one base class each still subclasses with its own typed
+  methods, its own `Protocol`, and its own `Fake<Name>Reader`.
+  `_get_json`/`_post_json` gained `headers` (a per-call mapping —
+  intake-api's `evidence.py` and messaging-api's `identity.py`, both
+  `main`, each need one) and `absent_on` (a `frozenset[int]` of status
+  codes that return `None` instead of raising — the check
+  state-law-api's `packs_reader.py` and messaging-api's `identity.py`
+  already do by hand). `_post_json` dropped `params`: no reader anywhere
+  in this platform posts a query string alongside a JSON body.
+  `doorway_errors`'s `base` parameter is now optional — leaving it unset
+  builds the local `f"{name}ReaderError"` class too, exposed as the
+  kit's new `.error` field, removing the last hand-written three-line
+  error class each reader needed. See
+  `docs/adr/0009-a-reader-base-not-a-third-copy-of-the-http-ceremony.md`.
+  Also added `canonical_content_hash` and `publish_versioned`'s new
+  `idempotent_on` parameter: republishing content whose canonical hash
+  matches the current version's returns the current version with no new
+  row, checked on every retry attempt so a version race between two
+  identical publishes still resolves to one row — the FS-986 gap in
+  state-law-api's `publish_statute_provision_set`/
+  `publish_standing_order_set` (store.py, also on `feature/fs-986`,
+  state-law-api PR #10), each of which hand-rolled the same
+  hash-and-compare check twice.
+- **0.3.2** (FS-986/FS-987 follow-up, 2026-09-05) — added
+  `servicekit.testing.siblings`: `SiblingSpec`, `sibling_app`,
+  `require_or_skip` — one shared harness for running a sibling service's
+  real app in a contract test, replacing statelaw-fs986's and
+  case-fs987's copy-pasted `sibling_apps.py`. New `testing` extra
+  (`testcontainers`, `pytest`); `servicekit.testing` (the package) still
+  never imports it as a side effect. `SiblingSpec` carries `after_start`,
+  an optional async callback run with the base URL once the sibling is
+  healthy, for setup that only works over HTTP (state-law-api seeding a
+  jurisdiction and its counties through its own write doors); any
+  exception it raises, an `httpx` error included, goes through the same
+  REQUIRE_SIBLINGS switch as a startup failure, while an exception from
+  the caller's own test body after the base URL is yielded still
+  propagates untouched. Setup steps are one ordered
+  `setup_commands: Sequence[Sequence[str]]`; every sibling is `main:app`.
+  See `docs/adr/0008-a-shared-sibling-test-harness-not-two-copies.md`.
 - **0.3.1** (FS-983 follow-up, 2026-09-05) — `StreamQueue.__init__`
   gained `redis_client: Redis | None = None`, letting a caller hand in
   an already-built Redis client instead of one built from `url`. Behavior

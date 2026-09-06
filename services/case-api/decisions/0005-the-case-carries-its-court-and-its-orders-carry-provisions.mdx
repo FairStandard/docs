@@ -1,0 +1,111 @@
+---
+title: "5. The case carries its court, and its orders carry provisions"
+description: "Date: 2026-09-05"
+---
+
+Date: 2026-09-05
+
+## Status
+
+Accepted
+
+## Context
+
+FS-987 needs case-api to answer two questions it could not answer before:
+what time is it, in this case, and what does this order actually say. The
+first question needs a clock — a case's court sits in one place, in one
+time zone, and every deadline downstream gets computed against that
+clock, not against whoever happens to be reading the case. The second
+question needs more than an order's title and status — it needs the
+order's individual terms, each one checkable against the analysis engine
+that watches for violations of it, and each one dated so the engine knows
+which term is actually in force at a given moment when a later order
+changes or cancels an earlier one.
+
+Two sibling services already own the vocabularies these fields need to be
+validated against: state-law-api owns jurisdictions and counties,
+analysis-api owns the condition-type registry a detection rule must use,
+and packs-api (already the seam for phase, ADR 0002) also owns order
+kinds and the communication-platform names a detection rule can name.
+None of these get duplicated into case-api's own tables as a second copy
+of the truth — case-api reads them at write time, the same reader-seam
+pattern ADR 0002 already established.
+
+## Decision
+
+**The case carries its court.** `Case` gains three required fields with
+no default: `timezone`, `jurisdiction`, `county`. A case without a court
+clock is not a case case-api can compute deadlines against, so none of
+the three is optional on the stored row. `jurisdiction` and `county` are
+checked against state-law-api's registry through a new `StateLawReader`
+seam (`state_law.py`), the same shape as `PacksReader` — a `Protocol`,
+an `Http` adapter for the real service, a `Fake` adapter for tests.
+`timezone` is checked against Python's own `zoneinfo` database by exact
+membership in `zoneinfo.available_timezones()` — no case-insensitive or
+`ZoneInfo`-construction fallback, since either can accept a
+non-canonical key on a case-insensitive filesystem that a
+case-sensitive one (Linux, including CI and production) would refuse.
+It is also checked against the county's own registered
+`default_timezone`, since the county — not the jurisdiction as a whole —
+is the source of truth for what clock its court keeps (a court in El
+Paso County, Texas keeps Mountain time even though the rest of Texas is
+Central): on `CaseIn`, `timezone` is optional; omit it and it is filled
+in from the county's registered default, supply it and it must equal
+that default or the create is a 422 naming both zones. The trio itself
+is named: `Venue` (`venue.py`) is a frozen value type holding
+`timezone`, `jurisdiction`, and `county`, with `Venue.validated` as the
+one place that runs every check above and raises a typed error naming
+which part failed — `Case`'s three columns are unchanged, and
+`Case.venue` rebuilds a `Venue` from them, reading cleanly against
+`Case.court` (the tribunal's own name, for example "419th") without
+either name needing a disambiguating suffix; `store.create_case` takes
+a `Venue` instead of three positional strings.
+
+**Orders carry provisions and precedence data.** A new `Provision` table
+holds one row per term of a court order: its verbatim text, a plain-
+language summary, a category, an effective window, and a list of
+detection rules the analysis engine uses to watch for violations of it.
+Each detection rule is checked at write time against analysis-api's
+condition-type registry (a new `ConditionTypesReader` seam,
+`condition_types.py`) and, when the rule names a communication platform,
+against packs-api's platform vocabulary. `CourtOrder` itself gains
+`kind` (checked against the case's practice-area pack, same as `phase`),
+an effective window (`effective_start`/`effective_end`), and `supersedes`
+— which earlier orders, and optionally which of their provisions by key,
+this order replaces. Supersession is content, not metadata: which layer
+of provisions governs at a given moment is read from `supersedes`, never
+guessed from issue date alone.
+
+**The lock is irreversible and freezes the layer as the engine sees it.**
+`CourtOrder.provisions_locked` starts `false`. Once an order's provisions
+have been reviewed and the analysis engine is relying on them, locking
+the order refuses any further `PUT` of its provisions and any `PATCH`
+touching `kind`, `effective_start`, `effective_end`, or `supersedes` — the
+fields that decide which provisions apply and when. The lock never goes
+back to unlocked; there is no unlock door. `provision_revision` bumps on
+every provisions replace and on every one of those same locked-field
+PATCHes, so a downstream reader (the engine, a dashboard) can tell its
+cached copy of an order's provisions is stale without re-fetching on
+every request.
+
+Each new sibling dependency gets a contract test that runs the same
+assertions against a `Fake*Reader` and the sibling's own real app,
+started as its own subprocess and reached over real HTTP — never by
+importing the sibling's code into this process, since every sibling pins
+its own dependency tree and reuses this repo's own top-level module
+names.
+
+## Consequences
+
+Every case now needs a real court clock before it can be created, and
+every provision-bearing write now costs a round trip to whichever sibling
+owns that vocabulary — the same trade ADR 0002 already made for phase,
+extended to three more fields and one more table. Locking an order is a
+one-way door on purpose: a locked order's provisions are what the engine
+already analyzed against, and letting them drift afterward would make the
+engine's findings describe an order that no longer exists. A case-team
+member who needs to fix a mistake in a locked order's provisions has no
+in-place edit — they supersede it with a new order instead, which is the
+same mechanism the domain already uses for every other correction to
+what a court has ordered.
+

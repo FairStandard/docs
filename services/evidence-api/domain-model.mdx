@@ -10,9 +10,31 @@ written once by intake and read by everyone, forever.
 ## Language
 
 **Record**:
-A single call or message belonging to a case. Written once, never changed,
-deduplicated by content hash within a workspace.
-_Avoid_: item, entry, event
+Anything a case holds as evidence — a call, a message, a financial
+transaction, a document, a recording, a photo, an export: every file type.
+Written once, never changed, deduplicated by content hash within a workspace.
+Widened by ruling on 2026-09-05; it used to name calls, messages and
+transactions only.
+_Avoid_: item, entry, event, file, upload
+
+**Financial transaction**:
+A record of money moving on a given day: an amount, a direction, the
+account it posted to, and the bank's description and category. One row per
+posting, as the statement shows it.
+_Avoid_: payment, charge, transfer (each names only one kind of posting)
+
+**Direction**:
+Which way the money moved on a financial transaction, from the account
+holder's side: `debit` means money left the account, `credit` means money
+came in.
+_Avoid_: type, sign, in/out
+
+**Account reference**:
+The financial account a transaction posted to: institution, account type,
+masked account number, and optionally whose account it is. Identifies
+which account, not the transaction itself.
+_Avoid_: account, account details (too vague to tell apart from the
+transaction it belongs to)
 
 **File**:
 An uploaded artifact (audio, PDF, export) stored in the object bucket and
@@ -41,4 +63,44 @@ _Avoid_: integrity check (too vague)
 The isolation unit all evidence is scoped to. Every query filters by
 workspace before anything else.
 _Avoid_: tenant, org
+
+### Platform vocabulary (ruled 2026-09-05)
+
+These words are platform structure, shared by every context. Each is owned by
+one context and defined there; use them exactly as defined and do not coin a
+local synonym. Rule `finding-and-pattern-are-platform-structure` in the canon.
+
+**Record** (owned by evidence):
+Anything a case holds as evidence: a call, a message, a money movement, a
+document, a recording, a photo, an export — every file type.
+_Avoid_: file, item, event, upload
+
+**Finding** (owned by analysis):
+One detected event on one record: what was measured and what it is consistent
+with, never a legal conclusion.
+_Avoid_: violation, detection, result, verdict, conduct event
+
+**Pattern** (owned by analysis):
+A course of conduct: many findings and dated events for one party over a
+period, under one category, with its own provenance, review history, and
+time-ordered trail. Made by a pack's pattern rule or assembled by a person;
+both have the same shape.
+_Avoid_: pattern group, cluster, campaign
+
+**Category** (pack content):
+The practice-area pack's catalog of the kinds of behaviour a finding or
+pattern is filed under. The platform knows there is a catalog; the pack says
+what is in it.
+_Avoid_: conduct category, conduct type, a hard-coded enum
+
+**Frame** (pack content):
+A named lens a pack attaches to a pattern kind — coercive control, restrictive
+gatekeeping — carrying its source and its evidentiary standing. A frame
+explains a pattern; it never changes what the findings measured.
+_Avoid_: diagnosis, syndrome, label
+
+**Conduct**:
+Not a platform word. Texas statute uses it to name specific offences; packs
+may use it inside their own content only.
+_Avoid_: conduct, conduct event, conduct type (in any core module, schema, or glossary)
 

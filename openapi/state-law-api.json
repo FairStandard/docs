@@ -22,6 +22,45 @@
         "title": "BulkIn",
         "type": "object"
       },
+      "CountyBulkIn": {
+        "properties": {
+          "counties": {
+            "items": {
+              "$ref": "#/components/schemas/CountyIn"
+            },
+            "title": "Counties",
+            "type": "array"
+          },
+          "jurisdiction": {
+            "title": "Jurisdiction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jurisdiction",
+          "counties"
+        ],
+        "title": "CountyBulkIn",
+        "type": "object"
+      },
+      "CountyIn": {
+        "properties": {
+          "county": {
+            "title": "County",
+            "type": "string"
+          },
+          "default_timezone": {
+            "title": "Default Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "county",
+          "default_timezone"
+        ],
+        "title": "CountyIn",
+        "type": "object"
+      },
       "CourtRuleSectionIn": {
         "properties": {
           "body": {
@@ -164,6 +203,63 @@
           "source_note"
         ],
         "title": "DeadlineRuleSetPublishIn",
+        "type": "object"
+      },
+      "DetectionRuleIn": {
+        "properties": {
+          "condition_type": {
+            "title": "Condition Type",
+            "type": "string"
+          },
+          "description_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Template"
+          },
+          "finding_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Type"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Parameters",
+            "type": "object"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          }
+        },
+        "required": [
+          "rule_id",
+          "condition_type"
+        ],
+        "title": "DetectionRuleIn",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -334,12 +430,12 @@
             "title": "Stage Id",
             "type": "string"
           },
-          "statute_references": {
+          "statute_refs": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Statute References",
+            "title": "Statute Refs",
             "type": "array"
           },
           "title": {
@@ -361,6 +457,120 @@
           "title"
         ],
         "title": "ProcessStageIn",
+        "type": "object"
+      },
+      "ProvisionIn": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "detection_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DetectionRuleIn"
+            },
+            "title": "Detection Rules",
+            "type": "array"
+          },
+          "effective_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End"
+          },
+          "effective_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start"
+          },
+          "provision_key": {
+            "title": "Provision Key",
+            "type": "string"
+          },
+          "statute_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Statute Refs",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "supersedable": {
+            "default": true,
+            "title": "Supersedable",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provision_key",
+          "title",
+          "text",
+          "summary",
+          "category"
+        ],
+        "title": "ProvisionIn",
+        "type": "object"
+      },
+      "StandingOrderSetPublishIn": {
+        "properties": {
+          "county": {
+            "title": "County",
+            "type": "string"
+          },
+          "jurisdiction": {
+            "title": "Jurisdiction",
+            "type": "string"
+          },
+          "practice_area": {
+            "title": "Practice Area",
+            "type": "string"
+          },
+          "provisions": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionIn"
+            },
+            "title": "Provisions",
+            "type": "array"
+          },
+          "source_note": {
+            "title": "Source Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jurisdiction",
+          "practice_area",
+          "provisions",
+          "source_note",
+          "county"
+        ],
+        "title": "StandingOrderSetPublishIn",
         "type": "object"
       },
       "StatuteIn": {
@@ -408,6 +618,37 @@
           "body"
         ],
         "title": "StatuteIn",
+        "type": "object"
+      },
+      "StatuteProvisionSetPublishIn": {
+        "properties": {
+          "jurisdiction": {
+            "title": "Jurisdiction",
+            "type": "string"
+          },
+          "practice_area": {
+            "title": "Practice Area",
+            "type": "string"
+          },
+          "provisions": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionIn"
+            },
+            "title": "Provisions",
+            "type": "array"
+          },
+          "source_note": {
+            "title": "Source Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jurisdiction",
+          "practice_area",
+          "provisions",
+          "source_note"
+        ],
+        "title": "StatuteProvisionSetPublishIn",
         "type": "object"
       },
       "ValidationError": {
@@ -478,6 +719,90 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/v1/counties/bulk": {
+      "post": {
+        "operationId": "bulk_load_counties_v1_counties_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CountyBulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Bulk Load Counties V1 Counties Bulk Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Load Counties"
+      }
+    },
+    "/v1/counties/{jurisdiction}": {
+      "get": {
+        "operationId": "list_counties_v1_counties__jurisdiction__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Counties V1 Counties  Jurisdiction  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Counties"
       }
     },
     "/v1/court-rule-sets/publish": {
@@ -977,6 +1302,322 @@
           }
         },
         "summary": "Get Current Process Definition"
+      }
+    },
+    "/v1/standing-order-sets/publish": {
+      "post": {
+        "operationId": "publish_standing_order_set_v1_standing_order_sets_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandingOrderSetPublishIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Publish Standing Order Set V1 Standing Order Sets Publish Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Standing Order Set"
+      }
+    },
+    "/v1/standing-order-sets/{jurisdiction}/{county}/{practice_area}/current": {
+      "get": {
+        "operationId": "get_current_standing_order_set_v1_standing_order_sets__jurisdiction___county___practice_area__current_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "county",
+            "required": true,
+            "schema": {
+              "title": "County",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "practice_area",
+            "required": true,
+            "schema": {
+              "title": "Practice Area",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Current Standing Order Set V1 Standing Order Sets  Jurisdiction   County   Practice Area  Current Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Current Standing Order Set"
+      }
+    },
+    "/v1/standing-order-sets/{jurisdiction}/{county}/{practice_area}/{version}": {
+      "get": {
+        "operationId": "get_standing_order_set_version_v1_standing_order_sets__jurisdiction___county___practice_area___version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "county",
+            "required": true,
+            "schema": {
+              "title": "County",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "practice_area",
+            "required": true,
+            "schema": {
+              "title": "Practice Area",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Standing Order Set Version V1 Standing Order Sets  Jurisdiction   County   Practice Area   Version  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Standing Order Set Version"
+      }
+    },
+    "/v1/statute-provision-sets/publish": {
+      "post": {
+        "operationId": "publish_statute_provision_set_v1_statute_provision_sets_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatuteProvisionSetPublishIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Publish Statute Provision Set V1 Statute Provision Sets Publish Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Statute Provision Set"
+      }
+    },
+    "/v1/statute-provision-sets/{jurisdiction}/{practice_area}/current": {
+      "get": {
+        "operationId": "get_current_statute_provision_set_v1_statute_provision_sets__jurisdiction___practice_area__current_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "practice_area",
+            "required": true,
+            "schema": {
+              "title": "Practice Area",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Current Statute Provision Set V1 Statute Provision Sets  Jurisdiction   Practice Area  Current Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Current Statute Provision Set"
+      }
+    },
+    "/v1/statute-provision-sets/{jurisdiction}/{practice_area}/{version}": {
+      "get": {
+        "operationId": "get_statute_provision_set_version_v1_statute_provision_sets__jurisdiction___practice_area___version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "practice_area",
+            "required": true,
+            "schema": {
+              "title": "Practice Area",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Statute Provision Set Version V1 Statute Provision Sets  Jurisdiction   Practice Area   Version  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Statute Provision Set Version"
       }
     },
     "/v1/statutes/bulk": {

@@ -1,0 +1,120 @@
+---
+title: "A shared sibling test harness, not two (then three) copies"
+description: "Ruled 2026-09-05 (FS-986/FS-987 follow-up)."
+---
+
+Ruled 2026-09-05 (FS-986/FS-987 follow-up).
+
+Two contract-test suites each grew the same ~200-300 line
+`sibling_apps.py`: pick a free port, resolve a sibling's checkout path
+from an env var (skip locally when it's unset, fail hard under
+`REQUIRE_SIBLINGS=1`), run the sibling's migration and optional
+bootstrap/seed step against a fresh `testcontainers` Postgres, start the
+sibling with `uv run --project <path> uvicorn main:app ...` in its own
+subprocess, poll its health path until it answers, yield its base URL,
+and tear it down. `statelaw-fs986` wrote it first, for analysis-api and
+packs-api; `case-fs987` copied it and added state-law-api, factoring the
+two bootstrap scripts into one `_run_bootstrap_script` helper along the
+way. A third contract-test suite would have copied it a third time.
+
+`servicekit.testing.siblings` is that harness moved to the one place every
+contract-test suite already depends on, spec-driven instead of hardcoding
+each sibling by name: `SiblingSpec` carries a sibling's path env var,
+health path, an ordered list of setup commands, and the env var its
+database URL goes under — `sibling_app(spec)` does the rest.
+`require_or_skip(spec)` is the one REQUIRE_SIBLINGS switch, usable on its
+own when a caller only needs the resolved path. Case-api's later, factored
+shape is the one this build kept where the two files differed —
+`_run_subprocess_step` here is that same factoring, generalized from "run
+one of two hardcoded seed scripts" to "run any setup command a spec
+supplies."
+
+This is a toolkit module, not a service module: it belongs in servicekit
+because "start a sibling service in its own process for a contract test"
+is exactly the kind of mechanics every service-pair doorway test needs
+regardless of which two services are involved, the same reasoning that put
+the stream engine and the doorway contract here. It stays out of
+`servicekit/__init__.py`'s import graph the same way `servicekit.testing`
+already does — `testcontainers` and `pytest` are the `testing` extra, not
+a core dependency, and `tests/test_no_hard_dependency.py` proves both that
+`pyproject.toml` never lists them as core and that importing
+`servicekit.testing` never imports `servicekit.testing.siblings` as a side
+effect.
+
+One deliberate difference from both source files: `REQUIRE_SIBLINGS` is
+read live (`os.environ.get("REQUIRE_SIBLINGS") == "1"`, checked inside
+`_missing_sibling` on every call) instead of cached into a module-level
+constant at import time. The two source files computed it once at import,
+which works fine in a real test run but makes the switch untestable
+without reimporting the module between assertions. Reading it live changes
+nothing about real usage — the env var doesn't change mid-run — and makes
+`servicekit.testing.siblings`'s own unit tests possible with plain
+`monkeypatch.setenv`/`delenv`.
+
+This build did not touch statelaw-fs986 or case-fs987 — adopting the
+shared harness in each (deleting their own copy of `sibling_apps.py`) is a
+separate, later change once each pins the servicekit revision this ADR
+merged as.
+
+Deletion test:
+`tests/test_no_hard_dependency.py::test_importing_servicekit_testing_does_not_import_the_siblings_submodule`
+— if `servicekit/testing/__init__.py` ever imported `siblings.py` (or
+re-exported anything from it), this test fails.
+
+## Review round before release: `after_start`, and trimming what the two real consumers never used
+
+PR review against a dry adoption of this module into case-fs987 found a
+real gap: state-law-api's contract fixture seeds a jurisdiction and its
+counties by calling `POST /v1/jurisdictions` and `POST /v1/counties/bulk`
+against the sibling's own app, once it is actually up — that is not a
+subprocess step, so it cannot be a `setup_commands` entry. Before this
+fix, a caller had no choice but to write that seeding call itself inside
+`async with sibling_app(spec) as base_url:`, and any failure there — an
+`httpx.HTTPStatusError` from `raise_for_status()`, not a `RuntimeError` —
+would escape the harness entirely rather than going through the one
+REQUIRE_SIBLINGS skip-or-fail switch every other startup failure goes
+through.
+
+`SiblingSpec` gained `after_start: Callable[[str], Awaitable[None]] |
+None`, an optional async callback run with the base URL once the health
+check passes. `_start` now runs setup commands, starts the process, waits
+for health, and calls `after_start` inside one `try` that catches any
+`Exception` — not just `RuntimeError` — and routes it through
+`_missing_sibling` with the sibling's captured stdout/stderr and the
+exception text in the message: skipped locally, failed hard under
+`REQUIRE_SIBLINGS=1`. That `try` ends before the base URL is ever handed
+to the caller; the `yield` that hands it over sits in its own `try`/
+`finally` whose only job is stopping the process, so an exception the
+caller's own test body raises afterward is never caught here — it
+propagates exactly as if `sibling_app` were a plain `async with` over an
+`httpx.AsyncClient`. See
+`tests/test_siblings.py::test_sibling_app_lets_the_callers_own_exception_propagate_after_yield`
+and the `after_start`-raises tests next to it.
+
+The same review, from the standards pass, named three fields on
+`SiblingSpec` that only ever had one value across both real callers
+(statelaw-fs986's and case-fs987's own `sibling_apps.py`, read directly
+for this fix): `app_target` was always `"main:app"` — every sibling here
+is served the same way, so it is now hardcoded inside `_serve_command`
+rather than a field nobody varied. `extra_env` was never set by either
+caller — each already builds its own `env` dict and would still need to
+for `database_url_env`, so the field added a merge step nothing used.
+`sibling_app`'s `database_url` parameter, for reusing a Postgres already
+running elsewhere, was never passed by either caller either — each
+fixture starts its own `testcontainers` Postgres per sibling; the
+parameter was speculative sharing nothing in this codebase does. All
+three are gone. `migration_command` and `bootstrap_command` are collapsed
+into one `setup_commands: Sequence[Sequence[str]]`, empty by default: both
+real callers only ever ran one ad hoc setup script per sibling, so naming
+two slots for it was inventing a distinction — a schema step and a seed
+step — that the actual usage never needed as two separate fields.
+`health_path` stayed configurable; it was already cheap and no review
+flagged it.
+
+Deletion test:
+`tests/test_siblings.py::test_sibling_app_fails_hard_when_after_start_raises_under_require_siblings`
+— if `_start` ever narrowed its `except` back down to `RuntimeError`
+alone, or let `after_start`'s exception (or the caller's own, after
+yield) bypass the REQUIRE_SIBLINGS switch, this and its sibling tests
+catch it.
+

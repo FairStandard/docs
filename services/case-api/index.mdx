@@ -1,11 +1,14 @@
 ---
 title: "case-api"
 sidebarTitle: "Overview"
-description: "The FairStandard case foundation store — cases (caption, number, court, parties, phase), court orders, and the docket (the event register of filings,…"
+description: "The FairStandard case foundation store — cases (caption, number, court, parties, phase, and now the court's own clock: time zone, jurisdiction, county), court…"
 ---
 
 The FairStandard case foundation store — cases (caption, number, court,
-parties, phase), court orders, and the docket (the event register of
+parties, phase, and now the court's own clock: time zone, jurisdiction,
+county), court orders (kind, effective window, supersession, and a
+provisions lock), provisions (one order's individual terms, each with
+detection rules for analysis-api), and the docket (the event register of
 filings, hearings, and service, each with a result and notes). Own
 Postgres, own service, workspace-scoped throughout.
 
@@ -28,16 +31,89 @@ uv run pyrefly check
 CI runs the same four checks from the committed lockfile on every push and
 pull request.
 
+## Contract tests against the real siblings
+
+`tests/test_contract_condition_types.py`, `tests/test_contract_packs.py`,
+and `tests/test_contract_state_law.py` run the same assertions against
+both a `Fake*Reader` and the real sibling service. The real-sibling half
+starts analysis-api, packs-api, or state-law-api as its own subprocess (in
+its own `uv`-managed venv), using the `SiblingSpec` definitions in
+`tests/sibling_specs.py` on top of the shared spin-up/health/
+`REQUIRE_SIBLINGS` machinery in `servicekit.testing.siblings` — never by
+importing the sibling's Python modules into this process, since every
+sibling pins its own `servicekit` revision and names its top-level
+modules (`main`, `models`, `store`, `settings`) the same way this repo
+does, so an in-process import risks a dependency or module-name
+collision.
+
+Point `ANALYSIS_API_PATH`, `PACKS_API_PATH`, and `STATE_LAW_API_PATH` at
+each sibling's checkout to run the real-sibling half locally; there is no
+built-in default, since a path that happens to work on one machine must
+not get silently baked into a shared test suite. Without a path set, that
+sibling's real-app test skips. Set `REQUIRE_SIBLINGS=1` to turn a missing
+or unhealthy sibling into a hard test failure instead — CI already sets
+it, against its own checkouts of all three siblings pinned at fixed
+commits in `.github/workflows/ci.yml` (the state-law-api pin points at
+its merged FS-986 commit on `main`).
+
+```bash
+REQUIRE_SIBLINGS=1 \
+ANALYSIS_API_PATH=../analysis-api \
+PACKS_API_PATH=../packs-api \
+STATE_LAW_API_PATH=../state-law-api \
+uv run pytest -q
+```
+
 ## Architecture
 
 - `models.py` / `store.py` — the case foundation store: `Case`,
-  `CaseParty`, `CourtOrder`, `DocketEntry`, all on the service's own
-  Postgres, every query scoped by `workspace_id`.
-- `packs.py` — the `PacksReader` seam to practice-area phase vocabulary
-  (ADR 0002): `HttpPacksReader` reads packs-api's live current-pack door;
+  `CaseParty`, `CourtOrder`, `DocketEntry`, `Provision`, all on the
+  service's own Postgres, every query scoped by `workspace_id`.
+- `venue.py` — the `Venue` value type (ADR 0005) for the timezone /
+  jurisdiction / county trio a case's court sits in: `Venue.validated`
+  checks all three together against `zoneinfo` and state-law-api's
+  registry, naming which part failed, and fills in an omitted timezone
+  from the case's county's own registered default.
+- `packs.py` — the `PacksReader` seam to practice-area phase vocabulary,
+  order kinds, and communication-platform vocabulary (ADR 0002, ADR
+  0005): `HttpPacksReader` reads packs-api's live current-pack door;
   `FakePacksReader` mirrors the same strict contract for tests.
+- `state_law.py` — the `StateLawReader` seam to state-law-api's
+  jurisdiction and county registry (ADR 0005): `HttpStateLawReader` reads
+  the live `/v1/jurisdictions` and `/v1/counties/{jurisdiction}` doors;
+  `FakeStateLawReader` mirrors the same contract for tests.
+- `condition_types.py` — the `ConditionTypesReader` seam to analysis-api's
+  condition-type registry (ADR 0005), used to validate a provision's
+  `detection_rules` at write time: `HttpConditionTypesReader` reads the
+  live `/internal/condition-types` door; `FakeConditionTypesReader`
+  mirrors the same contract for tests.
 - `main.py` — the internal HTTP surface, workspace-scoped by the
-  `X-Workspace-Id` header.
+  `X-Workspace-Id` header. New doors this wave: `PUT
+  /internal/orders/{order_id}/provisions` (replace an order's provisions
+  by `provision_key`), `GET
+  /internal/cases/{case_id}/orders/{order_id}/provisions`, and `GET
+  /internal/jurisdictions/{jurisdiction}/counties/{county}/timezone` (a
+  service-owned registry lookup, not case data).
+
+### Lock rules
+
+A `CourtOrder.provisions_locked` starts `false` and can only move to
+`true`, never back. Once locked: a `PUT .../provisions` and any PATCH
+touching `kind`, `effective_start`, `effective_end`, or `supersedes` are
+refused — the provisions layer is frozen exactly as the engine last saw
+it. `provision_revision` bumps on a provisions PUT and on any of those
+same PATCH fields, so a downstream reader can tell its cached copy is
+stale without re-fetching.
+
+### Sibling rule
+
+Every write to a `Provision`'s `detection_rules`, an order's `kind`, or a
+case's court clock is validated against a sibling service's own registry
+at write time — analysis-api's condition-type registry, packs-api's order
+kinds and communication platforms, state-law-api's jurisdictions and
+counties — never a locally duplicated copy of that vocabulary. See
+"Contract tests against the real siblings" above for how that contract is
+proven, not just assumed.
 
 Decision records live in `docs/adr/`; the domain glossary in
 `CONTEXT.md`.
@@ -50,12 +126,23 @@ repo). See ADR 0001.
 
 ## Status
 
-Cases, court orders, and the docket are readable and writable, all
-workspace-scoped. A case carries its `practice_area` (a registry string),
-and `phase` is validated at the door against that practice area's pack
-lifecycle vocabulary through the wired `HttpPacksReader` — an unknown
-phase, or a practice area with no published pack, is a 422. Migrations
+Cases, court orders, provisions, and the docket are readable and
+writable, all workspace-scoped. A case carries its `practice_area` (a
+registry string) and its court's own clock (`timezone`, `jurisdiction`,
+`county`); `phase` and `kind` are validated at the door against that
+practice area's pack vocabulary, and the court clock against zoneinfo and
+state-law-api's registries — an unknown phase, kind, jurisdiction, or
+county is a 422. `timezone` on create is optional: name one and it must
+match the case's county's own registered default_timezone, or the create
+is a 422 naming both zones; leave it out and the county's default fills
+it in. A provision's `detection_rules` are validated at write
+time against analysis-api's condition-type registry, and, for a
+`communication_channel` rule, packs-api's communication-platform
+vocabulary. An order's `provisions_locked` flag is a one-way switch;
+locking an order freezes its provisions and refuses further changes to
+`kind`, `effective_start`, `effective_end`, or `supersedes`. Migrations
 are real alembic (`uv run alembic upgrade head` against
 `CASE_DATABASE_URL`), exercised both directions by
-`tests/test_migrations.py`.
+`tests/test_migrations.py` against a real Postgres, with a test asserting
+the migrated schema matches `models.py` column-for-column.
 

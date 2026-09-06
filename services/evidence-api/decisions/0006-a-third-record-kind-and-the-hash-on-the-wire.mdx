@@ -1,0 +1,76 @@
+---
+title: "6. A third record kind, and the hash on the wire"
+description: "Date: 2026-09-05"
+---
+
+Date: 2026-09-05
+
+## Status
+
+Accepted
+
+## Context
+
+FS-988 (part of FS-982) asked for a `financial_transaction` record type
+alongside the existing call and message kinds, matching the shape
+analysis-api's domain already expects: an amount, a direction (`debit` or
+`credit`), and an account reference (institution, account type, masked
+account number, and an optional owner). ADR 0003 already settled that a
+new record type is a new column set on the one shared `records` table,
+not a new table, so this amends that ADR rather than replacing it: the
+table now carries five more nullable columns, and `RecordType` grows a
+third value.
+
+A financial transaction with no amount, or a call carrying a stray
+`amount` field, is not evidence anyone can trust - so the write door
+fences every type-specific field to the record kind(s) that own it, not
+just the five financial fields: a `financial_transaction` record must
+carry amount, direction, and account reference together, and may also
+carry a description and a category; a call's fields (`call_type`,
+`call_number`, `duration_seconds`, `transcript`) and a message's fields
+(`source_type`, `message_number`, `subject`, `body`, `viewed_at`) are
+each off limits to every other kind, including each other; `analytics`
+and `events` are raw payload data both call and message carry, so both
+own them. A record missing a required field, or carrying a field owned
+by some kind but not its own, is rejected with a 422 before anything is
+written, the same way a bad `occurred_at` already is - this closes a gap
+the first cut of this ADR left open, where only the five financial
+fields were fenced and a financial transaction could still carry a call
+or message field such as `transcript` or `viewed_at` unchecked.
+
+Separately, the read contract was quietly dropping `content_hash` -
+`_to_contract` excluded it. That was an oversight, not a decision: the
+hash is what CONTEXT.md calls the thing that tells two pieces of evidence
+apart, and a caller reading a record back had no way to see it. Every
+read now carries its content hash, for all three record kinds.
+
+## Decision
+
+`models.RecordType` and the write contract's `RecordType` both gain
+`"financial_transaction"`. `Record` and `RecordIn` gain `amount`,
+`direction`, `account_ref`, `description`, and `category`; `account_ref`
+is a small object (institution, account type, mask, owner) stored as JSON.
+The write door validates every type-specific field this way, not only
+the financial five: `main.py` carries a `REQUIRED_FIELDS_BY_RECORD_TYPE`
+and an `OWNED_FIELDS_BY_RECORD_TYPE` table, one entry per `RecordType`.
+A record must carry every field its own type requires, and must carry no
+field owned by a type it isn't - a field owned by more than one type
+(`analytics` and `events`, shared by call and message) is never foreign
+to either owner. `RecordIn`'s single `model_validator` checks both tables
+together and returns a 422 with a plain message, naming the field, on
+either violation. `_to_contract` stops excluding `content_hash`, so it
+appears on every record a caller reads back. The
+case-listing door's `record_type` filter accepts the new value like any
+other, and the single-record door gains the same filter: both doors
+build their query through the one `_scope()` clause list in `store.py`,
+so a `record_type` filter means the same thing in each place. On the
+single-record door, asking for a record of the wrong type answers 404
+with the same body as an id that does not exist at all.
+
+## Consequences
+
+A caller can now write and read financial transaction evidence through
+the same doors as calls and messages, and can filter a case's record list
+down to just one kind. Every record read anywhere in this service now
+carries its content hash on the wire, closing the gap ADR 0003 left open.
+

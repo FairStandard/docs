@@ -1,0 +1,210 @@
+---
+title: "Provision sets and the county registry are content here; supersession is data"
+description: "Added 2026-09-05, FS-986, part of the analysis-deepening pass (FS-982)."
+---
+
+Added 2026-09-05, FS-986, part of the analysis-deepening pass (FS-982).
+
+## What this adds
+
+Two more jurisdiction-scoped content types, following the same
+versioned-partition idiom every content type in this service already
+uses (ADR 0002 addendum, ADR 0004):
+
+- `StatuteProvisionSetVersion` — a versioned batch of statutory
+  provisions for one (jurisdiction, practice area): the rights and
+  rules a statute grants, each with a `supersedable` flag, a
+  citation list, and an optional set of detection rules an analysis
+  pass can check a case's records against.
+- `StandingOrderSetVersion` — the same provision shape, scoped one
+  level narrower to (jurisdiction, county, practice area), for the
+  standing orders a county's courts enter in every case of that kind
+  (e.g. Denton County's family-district-courts standing order
+  restraining removal of a child from Texas, disparagement, and
+  harassing contact between the parties).
+
+Both share one record shape, `ProvisionRecord` (`models.py`):
+`provision_key`, title, text, summary, category, `supersedable`,
+an effective window, statute references, and detection rules.
+`provision_key` is assigned by the writer, never the server, and
+matches case-api's field of the same name and purpose — the two
+services use one name for one idea. A `DetectionRuleRecord`
+names a `condition_type`, its parameters, and the finding it produces —
+the same shape analysis-api's engine already evaluates elsewhere, so a
+provision's detection rule is data an analysis pass consumes directly,
+never a hand-written check.
+
+Alongside these, a small `County` table (unpartitioned, like the
+jurisdiction registry) carries one row per (jurisdiction, county):
+county name and its default time zone. A case in that county is given
+its clock from this table — never a hardcoded `America/Chicago` or
+similar baked into a service that has no business knowing every
+jurisdiction's time zones.
+
+## Why detection rules are validated against two other services
+
+A provision's detection rule is only as good as the vocabulary it is
+written against. Before a publish writes anything, every detection
+rule is checked twice:
+
+- Its `condition_type` must be a real, active entry in analysis-api's
+  condition-type registry (`GET /internal/condition-types`), read
+  through a new `ConditionTypesReader` seam
+  (`condition_types_reader.py`) — the same Protocol/Fake/Http pattern
+  `PacksReader` already established (ADR 0005). An unknown or reserved
+  condition type is rejected with a `422`
+  (`UnknownConditionTypeError`), and its parameters are validated
+  against the JSON Schema that registry entry serves
+  (`InvalidDetectionRuleParametersError`).
+- Whichever parameter names a mandated platform for that
+  `condition_type` — `communication_channel`'s `required_platform` or
+  `platform_check`'s `expected`, per
+  `PLATFORM_PARAMETER_BY_CONDITION_TYPE` in `store.py` — must be in
+  the publishing practice area's pack vocabulary, read through
+  `PacksReader.communication_platforms` (already the seam ADR 0005
+  built) — an unlisted platform is rejected with a `422`
+  (`DisallowedPlatformError`).
+
+This is the same drift risk ADR 0005 closed for `practice_area`: a
+provision's detection rule naming a condition type or platform that
+does not actually exist anywhere would silently never fire. Both
+checks run before anything is written, not after.
+
+## Supersession is data, not a hardcoded exception list
+
+`supersedable` is a plain boolean on every provision, not a
+special-cased list maintained in code. The analysis-deepening pass's
+governing-framework model (FS-982) layers statute, standing order,
+temporary order, and final order content and asks, for any moment in a
+case, which provisions are in force — a later layer supersedes an
+earlier one's provision with the same subject unless the earlier
+provision's `supersedable` is `false`. This service's job is only
+to carry that flag as content; the precedence and supersession logic
+itself lives in the analysis-deepening pass, not here.
+
+The Texas seed data illustrates why this needs to be a real flag and
+not an assumption baked into the schema. Every provision seeded from
+Texas Family Code chapter 153 (`seed/tx-family-law.json`, loaded
+directly by the tests too — see below)
+carries `supersedable: true` — including § 153.073's "Rights of
+Parent at All Times." That section reads "Unless limited by court
+order," which is itself an explicit grant of authority to a court to
+limit it; § 153.254 exists precisely because a court must depart from
+the standard possession schedule for a child under three; and the
+standard possession order in §§ 153.311–153.3171 is, by the chapter's
+own terms (§§ 153.252, 153.004), a rebuttable default a court can
+displace on a best-interest finding. Research into the full chapter
+text (statutes.capitol.texas.gov, cross-checked against Justia and
+FindLaw) turned up no section that is unconditionally non-supersedable
+by court order. That is a finding about Texas Family Code chapter 153
+specifically, not a claim about every jurisdiction's law — a state
+whose statute genuinely does grant an unwaivable right would seed that
+provision with `supersedable: false`, and the framework would
+honor it. The field exists for that case; Texas chapter 153 does not
+happen to have one.
+
+## Republishing identical content is a no-op, not a new version
+
+A publish still never edits a row in place. But before FS-986's second
+round, publishing the exact same provisions again made a brand-new
+version anyway — every republish of unchanged content grew the version
+history for no reason, which makes "what changed between version 3 and
+version 4" a lie half the time.
+
+The rule now: publishing content whose canonical JSON hash equals the
+current version's hash is a no-op. It returns the current version
+unchanged — same version number, no new row — instead of writing a
+duplicate. Changed content still makes the next version, exactly as
+before. This applies to statute provision sets, standing-order sets,
+and the county registry alike (the county registry already had this
+property through its upsert; provision sets did not, until now).
+
+The hash is computed from the `provisions` list only — sorted-key JSON,
+so field order never matters — and deliberately excludes `source_note`.
+`source_note` is a citation and provenance comment about the publish,
+not part of the legal content itself; two publishes that carry the same
+provisions but a corrected or expanded note are still the same content,
+so they still collapse to one version. If a change is only to the note
+and nothing else, it does not appear in a new version; a real content
+change and a note update happen together in the next version instead.
+
+This is a deliberate difference from packs-api's ADR 0001, where
+`Store.publish` always inserts a new row and the idempotence check
+lives one layer up, in `seed.py`, before the store is ever called.
+Here the check lives inside the store's publish doors themselves
+(`store.py::Store.publish_statute_provision_set`,
+`publish_standing_order_set`), not above them. Reasoning: `seed.py` is
+one caller among possibly several (a future admin tool or another
+service could publish provisions too), and the "same content is a
+no-op" rule is a property of what a provision-set publish *means*, not
+a property of how the seed script happens to call it. Putting it in
+the store makes it true for every caller, not just the one we wrote
+first.
+
+The two provision-publish HTTP doors still return `201` on both a real
+publish and a no-op republish — no caller of these endpoints exists
+outside this service today, so a status-code split was not worth
+adding; the returned `version` tells the two cases apart.
+
+## The Texas seed (`seed/`)
+
+FS-986 also ships the first real jurisdiction content, not just test
+fixtures, published through `seed.py` (`uv run python seed.py`):
+
+- `seed/tx-family-law.json` — the ten Texas Family Code chapter 153
+  provisions (conservatorship, possession, and access), each citing
+  https://statutes.capitol.texas.gov/Docs/FA/htm/FA.153.htm and its own
+  section in its own `statute_refs` (added in FS-986's gate-b round: a
+  reader of one provision's findings could not previously follow it
+  back to the statute text without also reading the set-level
+  `source_note`). None carries a detection rule: analysis-api's active
+  condition types all evaluate communication or call records, and none
+  of these ten sections governs a communication or call.
+- `seed/tx-standing-orders.json` — Denton County's family-district-
+  courts standing order, a real, currently effective order (effective
+  February 27, 2025) drawn from its own numbered paragraphs
+  (https://www.dentoncounty.gov/DocumentCenter/View/710/Standing-Order-Regarding-Children-Property-and-Conduct-of-Parties-PDF).
+  An earlier version of this file held a fabricated Harris County
+  sample with an invented platform-detection rule requiring
+  OurFamilyWizard — FS-986's gate-b review caught it (Harris County has
+  no county-wide family-law standing order) and this file now carries
+  the real Denton County text instead, with zero detection rules: the
+  real order never names a specific platform, and none of its
+  provisions gives a real parameter to check one against.
+- `seed/tx-counties.json` — all 254 Texas counties, from the U.S.
+  Census Bureau's FIPS reference file for Texas
+  (https://www2.census.gov/geo/docs/reference/codes/files/st48_tx_cou.txt).
+  Every county defaults to `America/Chicago`, except El Paso and
+  Hudspeth, which the federal Uniform Time Act places in
+  `America/Denver`.
+
+`tests/fixtures/tx_counties.json` stays as a small,
+separately-maintained test fixture rather than loading from `seed/` —
+it is deliberately smaller (38 counties, not all 254) so a test
+failure points at test data, not at whether the real seed file happens
+to be well-formed. The family-law provisions and standing-order
+fixtures that used to live under `tests/fixtures/` were deleted in
+FS-986's gate-b round: they had drifted into byte-identical mirrors of
+`seed/tx-family-law.json` and `seed/tx-standing-orders.json`, so the
+tests now load those two files directly instead of keeping a second
+copy in sync by hand. `tests/test_seed.py` covers the real `seed/`
+files directly, running the seed script twice against a real database
+and asserting the second run publishes nothing new.
+
+A jurisdiction is not usable for cases until its statutory provision
+set, its county list, and its counties' default time zones are all
+published (spec section 8's launch gate) — seeding Texas's family-law
+provisions and its full county registry is what clears that gate for
+Texas family-law cases.
+
+## What did not change
+
+- No schema change to any existing table — this is two new tables plus
+  one new small registry table, following idioms already in place.
+  Idempotence is computed on the fly from the existing `provisions`
+  JSON column; no `content_hash` column was added.
+- A publish still never edits a row in place — it either writes the
+  next version or writes nothing at all.
+- `PacksReader` is extended (`communication_platforms`), not replaced;
+  its existing `practice_area` registry check (ADR 0005) is unchanged.
+

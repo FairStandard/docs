@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "Case": {
+        "description": "`practice_area` is a registry string validated against packs-api at\nwrite time (ADR 0002) - which pack's lifecycle vocabulary `phase` is\nread from. `timezone`, `jurisdiction`, and `county` are the court's own\nclock (ADR 0005), required on every case and validated at write time\nagainst zoneinfo and state-law-api's registries - a case without a\ncourt clock is not a case case-api can compute deadlines against, so\nnone of the three has a default. Together the three are a `Venue`\n(see `venue.py`); `venue` rebuilds one from the columns below - it\nreads cleanly against this table's own `court` column, which means\nsomething else entirely: the tribunal itself (ADR 0001, for example\n\"419th\").",
         "properties": {
           "caption": {
             "title": "Caption",
@@ -9,6 +10,10 @@
           },
           "case_number": {
             "title": "Case Number",
+            "type": "string"
+          },
+          "county": {
+            "title": "County",
             "type": "string"
           },
           "court": {
@@ -31,12 +36,20 @@
             ],
             "title": "Id"
           },
+          "jurisdiction": {
+            "title": "Jurisdiction",
+            "type": "string"
+          },
           "phase": {
             "title": "Phase",
             "type": "string"
           },
           "practice_area": {
             "title": "Practice Area",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
             "type": "string"
           },
           "updated_at": {
@@ -56,6 +69,9 @@
           "case_number",
           "court",
           "phase",
+          "timezone",
+          "jurisdiction",
+          "county",
           "created_at",
           "updated_at"
         ],
@@ -72,8 +88,16 @@
             "title": "Case Number",
             "type": "string"
           },
+          "county": {
+            "title": "County",
+            "type": "string"
+          },
           "court": {
             "title": "Court",
+            "type": "string"
+          },
+          "jurisdiction": {
+            "title": "Jurisdiction",
             "type": "string"
           },
           "phase": {
@@ -83,6 +107,17 @@
           "practice_area": {
             "title": "Practice Area",
             "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
           }
         },
         "required": [
@@ -90,13 +125,23 @@
           "caption",
           "case_number",
           "court",
-          "phase"
+          "phase",
+          "jurisdiction",
+          "county"
         ],
         "title": "CaseIn",
         "type": "object"
       },
       "CaseParty": {
+        "description": "`aliases` holds other names this party is known by in the record -\nfilings, transcripts, communications - so downstream matching (docket,\nanalysis) can resolve a mention to the right party (ADR 0005).",
         "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
           "case_id": {
             "title": "Case Id",
             "type": "integer"
@@ -191,6 +236,7 @@
         "type": "object"
       },
       "CourtOrder": {
+        "description": "`kind` is a registry string validated against the case's practice\narea pack at write time (ADR 0005) - what kind of order this is\n(statute, standing order, temporary order, final order, ...).\n`supersedes` is `[{order_id, provision_keys: list[str] | None}, ...]` -\nthe orders (and optionally the specific provisions within them) this\norder supersedes; every `order_id` must belong to the same case,\nenforced at write time rather than by a foreign key, since a\nsupersession can name only some of an order's provisions.\n`provisions_locked`, once true, freezes the order's provisions: PUT\nprovisions and a PATCH touching kind/effective_start/effective_end/\nsupersedes are refused; the lock never goes back to false once set - an\nirreversible decision, not a toggle. `provision_revision` is bumped on\na provisions PUT and on any PATCH that changes kind, effective_start,\neffective_end, or supersedes - a change counter downstream readers can\nuse to know their cached copy is stale.",
         "properties": {
           "case_id": {
             "title": "Case Id",
@@ -200,6 +246,30 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "effective_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End"
+          },
+          "effective_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start"
           },
           "id": {
             "anyOf": [
@@ -217,6 +287,10 @@
             "title": "Issued At",
             "type": "string"
           },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
           "notes": {
             "anyOf": [
               {
@@ -228,9 +302,27 @@
             ],
             "title": "Notes"
           },
+          "provision_revision": {
+            "default": 0,
+            "title": "Provision Revision",
+            "type": "integer"
+          },
+          "provisions_locked": {
+            "default": false,
+            "title": "Provisions Locked",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "supersedes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Supersedes",
+            "type": "array"
           },
           "title": {
             "title": "Title",
@@ -252,10 +344,68 @@
           "title",
           "issued_at",
           "status",
+          "kind",
           "created_at",
           "updated_at"
         ],
         "title": "CourtOrder",
+        "type": "object"
+      },
+      "DetectionRuleIn": {
+        "properties": {
+          "condition_type": {
+            "title": "Condition Type",
+            "type": "string"
+          },
+          "description_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Template"
+          },
+          "finding_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Type"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Parameters",
+            "type": "object"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          }
+        },
+        "required": [
+          "rule_id",
+          "condition_type"
+        ],
+        "title": "DetectionRuleIn",
         "type": "object"
       },
       "DocketEntry": {
@@ -416,9 +566,37 @@
       },
       "OrderIn": {
         "properties": {
+          "effective_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End"
+          },
+          "effective_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start"
+          },
           "issued_at": {
             "format": "date-time",
             "title": "Issued At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
             "type": "string"
           },
           "notes": {
@@ -436,6 +614,14 @@
             "title": "Status",
             "type": "string"
           },
+          "supersedes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SupersedesEntry"
+            },
+            "title": "Supersedes",
+            "type": "array"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -444,13 +630,49 @@
         "required": [
           "title",
           "issued_at",
-          "status"
+          "status",
+          "kind"
         ],
         "title": "OrderIn",
         "type": "object"
       },
       "OrderUpdate": {
         "properties": {
+          "effective_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End"
+          },
+          "effective_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
           "notes": {
             "anyOf": [
               {
@@ -462,6 +684,17 @@
             ],
             "title": "Notes"
           },
+          "provisions_locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provisions Locked"
+          },
           "status": {
             "anyOf": [
               {
@@ -472,6 +705,20 @@
               }
             ],
             "title": "Status"
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SupersedesEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes"
           },
           "title": {
             "anyOf": [
@@ -490,6 +737,14 @@
       },
       "PartyIn": {
         "properties": {
+          "aliases": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -504,6 +759,395 @@
           "role"
         ],
         "title": "PartyIn",
+        "type": "object"
+      },
+      "Provision": {
+        "description": "One term of a court order, extracted or hand-entered (ADR 0005).\n`provision_key` is writer-assigned and stable across a `PUT\n.../provisions` replace - the replace matches existing rows by\n(order_id, provision_key) so a provision's id, and anything keyed\noff it, survives an edit that keeps the same key. `detection_rules` is\n`[{rule_id, condition_type, parameters, severity, finding_type,\ndescription_template}, ...]`, validated at write time against\nanalysis-api's condition-type registry and, for a\n`communication_channel` rule, the practice area's pack platform\nvocabulary.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detection_rules": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Detection Rules",
+            "type": "array"
+          },
+          "effective_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End"
+          },
+          "effective_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start"
+          },
+          "extraction_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Confidence"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "paragraph_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph Number"
+          },
+          "parties_affected": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Parties Affected",
+            "type": "array"
+          },
+          "provenance_char_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance Char End"
+          },
+          "provenance_char_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance Char Start"
+          },
+          "provision_key": {
+            "title": "Provision Key",
+            "type": "string"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Section"
+          },
+          "statute_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Statute Refs",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "supersedable": {
+            "default": true,
+            "title": "Supersedable",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verbatim_text": {
+            "title": "Verbatim Text",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "order_id",
+          "provision_key",
+          "title",
+          "verbatim_text",
+          "summary",
+          "category",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Provision",
+        "type": "object"
+      },
+      "ProvisionIn": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "detection_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DetectionRuleIn"
+            },
+            "title": "Detection Rules",
+            "type": "array"
+          },
+          "effective_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End"
+          },
+          "effective_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start"
+          },
+          "extraction_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Confidence"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "paragraph_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph Number"
+          },
+          "parties_affected": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Parties Affected",
+            "type": "array"
+          },
+          "provenance_char_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance Char End"
+          },
+          "provenance_char_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance Char Start"
+          },
+          "provision_key": {
+            "title": "Provision Key",
+            "type": "string"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Section"
+          },
+          "statute_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Statute Refs",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "supersedable": {
+            "default": true,
+            "title": "Supersedable",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "verbatim_text": {
+            "title": "Verbatim Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provision_key",
+          "title",
+          "verbatim_text",
+          "summary",
+          "category"
+        ],
+        "title": "ProvisionIn",
+        "type": "object"
+      },
+      "ProvisionsReplaceIn": {
+        "properties": {
+          "provisions": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionIn"
+            },
+            "title": "Provisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provisions"
+        ],
+        "title": "ProvisionsReplaceIn",
+        "type": "object"
+      },
+      "SupersedesEntry": {
+        "properties": {
+          "order_id": {
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "provision_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provision Keys"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "title": "SupersedesEntry",
         "type": "object"
       },
       "ValidationError": {
@@ -948,6 +1592,22 @@
             }
           },
           {
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Include"
+            }
+          },
+          {
             "in": "header",
             "name": "X-Workspace-Id",
             "required": true,
@@ -1038,6 +1698,67 @@
           }
         },
         "summary": "Create Order"
+      }
+    },
+    "/internal/cases/{case_id}/orders/{order_id}/provisions": {
+      "get": {
+        "operationId": "list_order_provisions_internal_cases__case_id__orders__order_id__provisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Workspace-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Provision"
+                  },
+                  "title": "Response List Order Provisions Internal Cases  Case Id  Orders  Order Id  Provisions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Order Provisions"
       }
     },
     "/internal/cases/{case_id}/parties": {
@@ -1252,6 +1973,58 @@
         "summary": "Update Docket Entry"
       }
     },
+    "/internal/jurisdictions/{jurisdiction}/counties/{county}/timezone": {
+      "get": {
+        "operationId": "suggest_county_timezone_internal_jurisdictions__jurisdiction__counties__county__timezone_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "county",
+            "required": true,
+            "schema": {
+              "title": "County",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Suggest County Timezone Internal Jurisdictions  Jurisdiction  Counties  County  Timezone Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest County Timezone"
+      }
+    },
     "/internal/orders/{order_id}": {
       "get": {
         "operationId": "get_order_internal_orders__order_id__get",
@@ -1354,6 +2127,68 @@
           }
         },
         "summary": "Update Order"
+      }
+    },
+    "/internal/orders/{order_id}/provisions": {
+      "put": {
+        "operationId": "replace_provisions_internal_orders__order_id__provisions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Workspace-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProvisionsReplaceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Provision"
+                  },
+                  "title": "Response Replace Provisions Internal Orders  Order Id  Provisions Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Provisions"
       }
     }
   }

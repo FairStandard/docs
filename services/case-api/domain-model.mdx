@@ -71,8 +71,142 @@ _Avoid_: tenant (bare), org (workspace and org are related but not
 interchangeable — workspace is the scoping key on this store's rows)
 
 **PacksReader**:
-The seam to the practice-area pack that owns phase vocabulary. A `Protocol`
-with one method today (`validate_phase`); a `FakePacksReader` backs it
-until packs-api ships an HTTP surface to call. See ADR 0002.
+The seam to the practice-area pack that owns phase, order-kind, and
+communication-platform vocabulary. A `Protocol` backed by
+`HttpPacksReader` against packs-api's live current-pack door, and by
+`FakePacksReader` in tests. See ADR 0002.
 _Avoid_: pack client, vocabulary service
+
+**Provision**:
+One term of a court order — its verbatim text, a summary, a category, an
+effective window, and the detection rules analysis-api uses to find
+violations of it. Lives on its own table, one row per term, keyed to the
+order it came from by `provision_key`. See ADR 0005.
+_Avoid_: term (bare), clause, condition (a provision's detection rule
+names a `condition_type`; the provision itself is not the condition)
+
+**Order kind**:
+A registry string on `CourtOrder.kind` — statute, standing order,
+temporary order, final order, and so on — naming what kind of order this
+is, validated against the case's practice-area pack. Not the same
+vocabulary as an order's `status` (active, superseded).
+_Avoid_: order type, category (bare — provisions have their own
+`category`, a different field)
+
+**Supersedes**:
+The list on `CourtOrder.supersedes` naming which earlier orders (and
+optionally which of their provisions, by key) this order replaces. Every
+named order must belong to the same case. Supersession is content: which
+layer is in force at a given moment is read from this list, not assumed
+from issue date alone.
+_Avoid_: overrides, replaces (bare — supersedes is the field name and the
+precise term)
+
+**Lock**:
+`CourtOrder.provisions_locked` — a one-way switch. Once set, the order's
+provisions are frozen: no more `PUT .../provisions`, and no PATCH to
+`kind`, `effective_start`, `effective_end`, or `supersedes`. It never goes
+back to unlocked once locked.
+_Avoid_: finalize, freeze (bare — lock is the field's own name)
+
+**Provision revision**:
+`CourtOrder.provision_revision` — a counter bumped on a provisions
+replace and on any locked-field PATCH, so a downstream reader can tell its
+cached copy of an order's provisions is stale without re-fetching.
+_Avoid_: version (bare — this repo uses "revision" for this counter and
+reserves "version" for other things, like a pack's own version)
+
+**Alias**:
+An entry in `CaseParty.aliases` — another name this party is known by
+across filings, transcripts, and communications, so downstream matching
+can resolve a mention to the right party.
+_Avoid_: nickname, alternate name
+
+**Jurisdiction**:
+The state (or other top-level legal authority) a case's court sits in,
+stored on `Case.jurisdiction` and validated against state-law-api's
+jurisdiction registry. Distinct from `practice_area`, which names the
+legal domain (family law, and so on), not the place.
+_Avoid_: state (bare — some jurisdictions are not states)
+
+**County**:
+The county a case's court sits in, stored on `Case.county` and validated
+against state-law-api's county registry for the case's jurisdiction. A
+county's own registered time zone is what `default_timezone` on
+state-law-api's door names; case-api resolves it through `StateLawReader`
+rather than duplicating it.
+_Avoid_: venue (bare — venue is a legal term of art broader than county)
+
+**Time zone**:
+`Case.timezone` — the court's own clock, required on every case. On
+create it is optional on the wire: name one and it must match the case's
+county's own registered `default_timezone`, from state-law-api's
+registry — a court in El Paso County keeps Mountain time, so naming
+`America/Chicago` there is a 422 naming both zones, not a data error left
+to slide. Leave it out and the county's registered default fills it in.
+Every deadline computation downstream reads from this field, not from a
+party's or a server's local time.
+_Avoid_: TZ (bare), offset (a time zone name, like `America/Chicago`, not
+a raw UTC offset)
+
+**Venue**:
+The court a case sits in: its jurisdiction, county, and the clock it
+keeps. A `Venue` (`venue.py`) is the value type for the timezone /
+jurisdiction / county trio that used to travel as three separate
+arguments through `Case`, `CaseIn`, `store.create_case`, and two
+validator functions; `Venue.validated` checks all three together and
+names which part failed. `Case.venue` rebuilds the `Venue` from the
+case's timezone, jurisdiction, and county columns; `Case.court` is a
+separate plain-string field naming the tribunal itself (for example
+"419th").
+_Avoid_: court (as the value type's name — `Case.court` is a different,
+plain-string field), location
+
+### Platform vocabulary (ruled 2026-09-05)
+
+These words are platform structure, shared by every context. Each is owned by
+one context and defined there; use them exactly as defined and do not coin a
+local synonym. Rule `finding-and-pattern-are-platform-structure` in the canon.
+
+**Record** (owned by evidence):
+Anything a case holds as evidence: a call, a message, a money movement, a
+document, a recording, a photo, an export — every file type.
+_Avoid_: file, item, event, upload
+
+**Finding** (owned by analysis):
+One detected event on one record: what was measured and what it is consistent
+with, never a legal conclusion.
+_Avoid_: violation, detection, result, verdict, conduct event
+
+**Pattern** (owned by analysis):
+A course of conduct: many findings and dated events for one party over a
+period, under one category, with its own provenance, review history, and
+time-ordered trail. Made by a pack's pattern rule or assembled by a person;
+both have the same shape.
+_Avoid_: pattern group, cluster, campaign
+
+**Category** (pack content):
+The practice-area pack's catalog of the kinds of behaviour a finding or
+pattern is filed under. The platform knows there is a catalog; the pack says
+what is in it.
+_Avoid_: conduct category, conduct type, a hard-coded enum
+
+**Frame** (pack content):
+A named lens a pack attaches to a pattern kind — coercive control, restrictive
+gatekeeping — carrying its source and its evidentiary standing. A frame
+explains a pattern; it never changes what the findings measured.
+_Avoid_: diagnosis, syndrome, label
+
+**Conduct**:
+Not a platform word. Texas statute uses it to name specific offences; packs
+may use it inside their own content only.
+_Avoid_: conduct, conduct event, conduct type (in any core module, schema, or glossary)
+
+**Expression**:
+The text a regex-based detection rule matches against a record. The
+condition-type door names this parameter `expression`; it used to be
+called `pattern`, and that word now names the course-of-conduct unit
+instead. Seeded rules in this service are renamed to match in a follow-up
+after analysis pull request 2 lands.
+_Avoid_: pattern (for the regex text), regex (bare)
 

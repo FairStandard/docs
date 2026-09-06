@@ -102,3 +102,43 @@ scoping is a discipline enforced in `store.py`, the same as every other
 carved service in the platform.
 _Avoid_: tenant isolation, RLS (we don't use it)
 
+### Platform vocabulary (ruled 2026-09-05)
+
+These words are platform structure, shared by every context. Each is owned by
+one context and defined there; use them exactly as defined and do not coin a
+local synonym. Rule `finding-and-pattern-are-platform-structure` in the canon.
+
+**Record** (owned by evidence):
+Anything a case holds as evidence: a call, a message, a money movement, a
+document, a recording, a photo, an export — every file type.
+_Avoid_: file, item, event, upload
+
+**Finding** (owned by analysis):
+One detected event on one record: what was measured and what it is consistent
+with, never a legal conclusion.
+_Avoid_: violation, detection, result, verdict, conduct event
+
+**Pattern** (owned by analysis):
+A course of conduct: many findings and dated events for one party over a
+period, under one category, with its own provenance, review history, and
+time-ordered trail. Made by a pack's pattern rule or assembled by a person;
+both have the same shape.
+_Avoid_: pattern group, cluster, campaign
+
+**Category** (pack content):
+The practice-area pack's catalog of the kinds of behaviour a finding or
+pattern is filed under. The platform knows there is a catalog; the pack says
+what is in it.
+_Avoid_: conduct category, conduct type, a hard-coded enum
+
+**Frame** (pack content):
+A named lens a pack attaches to a pattern kind — coercive control, restrictive
+gatekeeping — carrying its source and its evidentiary standing. A frame
+explains a pattern; it never changes what the findings measured.
+_Avoid_: diagnosis, syndrome, label
+
+**Conduct**:
+Not a platform word. Texas statute uses it to name specific offences; packs
+may use it inside their own content only.
+_Avoid_: conduct, conduct event, conduct type (in any core module, schema, or glossary)
+

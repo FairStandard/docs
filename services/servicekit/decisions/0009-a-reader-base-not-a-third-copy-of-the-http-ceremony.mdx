@@ -1,0 +1,193 @@
+---
+title: "A reader base, not a third copy of the HTTP ceremony"
+description: "Ruled 2026-09-05 (FS-986/FS-987 follow-up)."
+---
+
+Ruled 2026-09-05 (FS-986/FS-987 follow-up).
+
+**Where these five readers actually live, checkable today:** none of them
+are on either repo's `main`. All five sit on open, unmerged branches:
+case-api's `packs.py`, `state_law.py`, `condition_types.py` are on branch
+`feature/fs-987` (case-api PR
+[#9](https://github.com/FairStandard/case-api/pull/9)); state-law-api's
+`packs_reader.py`, `condition_types_reader.py` are on branch
+`feature/fs-986` (state-law-api PR
+[#10](https://github.com/FairStandard/state-law-api/pull/10)). "case-fs987"
+and "statelaw-fs986" below name those two branches, not two separate repos.
+Anyone checking this ADR against `main` in either repo will not find these
+five files — that is expected until each PR merges, not a sign the files
+are fictional. What IS on `main` today, and checkable right now, is
+case-api's own `HttpPacksReader` in `packs.py` before `feature/fs-987`'s
+changes — the README's "How to adopt" section rewrites that exact reader.
+
+Every one of the five repeats the same shape: a local `<Name>ReaderError`
+class, a `doorway_errors(base=..., name=...)` kit, `<Name>Rejected`/
+`<Name>Unavailable` aliases pulled off that kit, a `Protocol` naming the
+reader's methods, a `Fake<Name>Reader` for tests, and an
+`Http<Name>Reader.__init__(client, *, retries=3)` whose methods each wrap
+one `client.get`/`client.post` in a retry-and-translate call. The two
+branches even drifted on how they do the last part: case-fs987's readers
+call `_kit.call(attempt, ...)` directly; statelaw-fs986's readers import
+`Rejected`, `Unavailable`, `call_with_retries` and hand-write the
+try/except that `_kit.call` already does. A third contract-test-adjacent
+reader would have copied one of the two shapes a third time — this is the
+same problem `docs/adr/0008-a-shared-sibling-test-harness-not-two-copies.md`
+solved for the sibling test harness, applied to the readers themselves.
+
+## What moved into servicekit
+
+**`doorway_errors` now builds the local error class too, not just its
+Rejected/Unavailable subclasses.** `base` became optional: leaving it
+unset builds a fresh `f"{name}ReaderError"` exception class and exposes it
+as `kit.error`, so a caller no longer hand-writes the three-line
+`class XReaderError(Exception): """docstring"""` that was the last bit of
+copy-paste `doorway_errors` (ADR 0001) didn't already collapse. Passing
+`base` explicitly still works exactly as before — `kit.error` is just that
+same class handed back — so every existing caller of `doorway_errors` is
+unaffected.
+
+`error` is a new required field on the frozen `DoorwayErrorKit` dataclass,
+with no default. That is only safe because nothing constructs
+`DoorwayErrorKit` directly: `grep -rn "DoorwayErrorKit(" */**.py` across
+every FairStandard `*-api` repo and servicekit itself turns up exactly one
+call site — `doorway_errors` itself, in this file — so there is no
+existing direct construction anywhere that a default would need to keep
+working. `error` staying required (rather than defaulted off
+`rejected.__mro__`, which was the fallback plan if a direct caller turned
+up) keeps the dataclass honest: every kit really does carry all three
+fields, not two plus an inferred one.
+
+**`HttpReaderBase`** is the `__init__(client, kit, *, retries=3,
+unavailable=...)` plus `_get_json(path, *, params=None, headers=None,
+absent_on=frozenset())` / `_post_json(path, *, json=None, headers=None,
+absent_on=frozenset())` ceremony every `Http<Name>Reader` hand-writes:
+store the client and retry budget, wrap one request in the kit's
+`.call()`, return the parsed JSON body.
+
+- `params` stays on `_get_json` — it is real, checkable on `main` today:
+  analysis-api's `HttpUpstream.get_record` (`upstream.py`) passes
+  `params={"record_type": record_type}` on a GET, and deadlines-api's,
+  filings-api's, and marketplace-api's case/billing readers all pass a
+  `params` dict alongside a per-call header on their own paginated or
+  filtered GETs. `_post_json` drops `params` — no reader in this platform
+  posts a query string alongside a JSON body; a reader that ever needs
+  one uses the escape hatch below instead.
+- `headers` is new on both methods — intake-api's `HttpEvidenceStore`
+  (`evidence.py`) sends a per-call `X-Workspace-Id` on every POST,
+  messaging-api's `HttpIdentityReader` (`identity.py`) sends a per-call
+  `Authorization` bearer token on its GET, and deadlines-api's,
+  filings-api's, and marketplace-api's readers all send a per-call
+  `X-Workspace-Id` on their GETs too. Without it, a subclass needing a
+  per-call header had to bypass `_get_json`/`_post_json` entirely and
+  hand-write its own `attempt`.
+- `absent_on` is new on both methods: a `frozenset[int]` of status codes
+  that mean "this doesn't exist," not "this call failed." A response
+  whose status is in that set short-circuits to `None` instead of
+  raising. Empty by default, so every existing call keeps raising exactly
+  as before. This is the same check statelaw-fs986's `packs_reader.py`
+  (`HttpPacksReader.practice_area_exists`/`communication_platforms`,
+  both checking `response.status_code == 404` before `raise_for_status`)
+  and `main`'s messaging-api `identity.py`
+  (`HttpIdentityReader.verify`, checking `response.status_code == 401`)
+  already do by hand — folded into the base so a subclass passes
+  `absent_on={404}` (or `{401}`) instead of writing that check itself.
+  A subclass that needs to special-case one status — case-fs987's
+  `packs.py`'s `HttpPacksReader` treats a 404 from `/packs/current` as
+  "no published pack" rather than a failure — can now do that either way:
+  `absent_on={404}` for the plain "return `None`" case, or still catch
+  the kit's own `rejected` type (the module-level alias built from the
+  same kit) around a call and inspect `.status_code`, exactly as today,
+  when the default it needs isn't `None`.
+- **Escape hatch:** neither method covers everything a reader might send
+  — a multipart upload (intake-api's `files_reader.py`, `main`, posts
+  `files=`/`data=`, not a JSON body) or any other non-JSON body or
+  response. A subclass that needs that calls `self._kit.call(attempt,
+  ...)` directly, exactly as every reader does today, instead of going
+  through `_get_json`/`_post_json`. See the README's "Escape hatch"
+  section for the worked example.
+
+## What deliberately stays in each service
+
+**The `Protocol` and the `Fake<Name>Reader` never move here.** Each
+reader's Protocol names that service's own contract with its sibling —
+`PacksReader.validate_phase`/`order_kinds`/`communication_platforms` in
+case-fs987 is not the same contract as `PacksReader.practice_area_exists`/
+`communication_platforms` in statelaw-fs986, even though both talk to
+packs-api and share a class name. Collapsing them into one shared
+Protocol would either force every consumer's interface to be the union of
+what every reader ever needed, or silently pick one service's shape as
+the canonical one — both hide a real per-service decision behind a
+toolkit default. Same reasoning for the Fakes: each one encodes that
+service's own test doubles (case-fs987's `FakePacksReader` fakes three
+methods with three independent lookup tables; statelaw-fs986's fakes two,
+with different constructor shapes entirely) — a shared Fake would need to
+be the union of both, which is not a fake of anything real.
+
+**Each reader keeps its own typed methods, its own module docstring
+naming which ADR governs the seam, and its own `_kit = doorway_errors(...)`
+call** — the two or three lines that name what talks to what and why
+still live where the seam is, not in the toolkit. `HttpReaderBase` only
+owns the part that was identical every time regardless of which two
+services were talking.
+
+## Why the toolkit, not a code-generation template
+
+The same reasoning that put the doorway contract and the sibling harness
+in servicekit applies here: "wrap one HTTP call in retry-and-translate,
+return JSON" is exactly the kind of mechanics every service-pair doorway
+needs, regardless of which two services are involved. A generator or
+snippet library would still leave five (soon more) independently
+drifting copies to keep in sync by hand — this repo's own two readers
+already drifted on the `_kit.call` vs. hand-rolled try/except question
+before this change existed to answer it.
+
+## Deletion test
+
+`tests/test_http_reader.py::test_two_kits_named_differently_stay_distinct_error_families`
+— if `HttpReaderBase` or `doorway_errors` ever collapsed two different
+reader kits into one shared error type, this test fails: two readers
+built with different `name`s must keep raising exceptions that are not
+instances of each other's family, exactly as `doorway_errors` alone
+already guaranteed in `tests/test_doorway_errors.py`.
+
+## This build did not touch case-fs987 or statelaw-fs986
+
+Same scope discipline as ADR 0008: this is a servicekit-only change.
+Rewriting the five existing readers onto `HttpReaderBase` is a separate,
+later change in each repo once it pins the servicekit revision this ADR
+merged as. The README's "How to adopt" section shows the shape one of
+them takes.
+
+## FS-986 follow-up: idempotent publishing joins the same PR
+
+A second, unrelated gap surfaced by state-law-api's own simplify review
+landed in this build too, because it is the same kind of toolkit
+extraction: `publish_versioned` (ADR 0004) owns the retry-on-race half of
+versioned publishing, but not content-hash idempotence.
+`publish_statute_provision_set` and `publish_standing_order_set`
+(state-law-api's store.py) each hand-roll "look up current, hash-compare
+against the new content, insert only if it actually changed" — a private
+`_canonical_content_hash` helper duplicated as the same function twice,
+and the look-up-then-compare branch duplicated as the same shape twice.
+
+`canonical_content_hash(payload)` is that hash, promoted to a reusable
+pure function (JSON-canonicalized with `sort_keys=True`, then sha256, so
+a database round-trip's own field reordering never looks like changed
+content). `publish_versioned` gained `idempotent_on`, an optional
+callable awaited on every retry attempt before `publish_once` runs: a
+match returns the existing row immediately, with `publish_once` never
+called — no insert, no version bump. Checking it inside the retry loop
+rather than once before it matters for the same race `publish_versioned`
+already exists to fix: if this attempt's insert loses a version race to
+another publisher who published identical content, the retry re-checks
+and returns that publisher's row instead of writing a duplicate, rather
+than only checking idempotence on the first attempt and then blindly
+retrying past it.
+
+Deletion test:
+`tests/test_versioning.py::test_idempotent_on_is_rechecked_on_every_retry_attempt`
+— if `idempotent_on` were checked once before the loop instead of on
+every attempt, this test's `Contended`-then-recovered sequence would
+never observe the second, successful idempotence check, and the test
+would see `publish_once` get called instead of the short-circuit return.
+

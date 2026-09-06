@@ -1,14 +1,14 @@
 ---
 title: "evidence-api"
 sidebarTitle: "Overview"
-description: "The FairStandard evidence store. It owns the platform's immutable evidence: records (calls and messages), stored files, and the tamper-evident hash-chained…"
+description: "The FairStandard evidence store. It owns the platform's immutable evidence: records (calls, messages, and financial transactions), stored files, and the…"
 ---
 
 The FairStandard evidence store. It owns the platform's immutable evidence:
-records (calls and messages), stored files, and the tamper-evident
-hash-chained audit trail. Evidence is written once by the intake service and
-read by every other service over this API — it is never mutated, and it
-never moves again.
+records (calls, messages, and financial transactions), stored files, and the
+tamper-evident hash-chained audit trail. Evidence is written once by the
+intake service and read by every other service over this API — it is never
+mutated, and it never moves again.
 
 ## Run it
 
@@ -32,12 +32,30 @@ pull request.
 ## Status
 
 Built and tested: the insert-only record store with per-workspace
-content-hash dedup, the file store behind the S3 seam (presigned upload
-and audited, presigned download doors - FS-965), and the hash-chained
-audit trail with tamper-detection tests. Migrations are real alembic
-(`uv run alembic upgrade head` against `EVIDENCE_DATABASE_URL`),
-exercised both directions by `tests/test_migrations.py`. Configuration
-is environment-driven under the `EVIDENCE_` prefix. Not yet built: the
-dedicated file-level ledger table (ADR 0005 names it as future work)
-and relation-fact emission (ADR 0004).
+content-hash dedup, three record kinds (call, message, financial
+transaction - ADR 0006), the file store behind the S3 seam (presigned
+upload and audited, presigned download doors - FS-965), and the
+hash-chained audit trail with tamper-detection tests. Every record read
+back over the API carries its content hash (ADR 0006) - a caller can tell
+two records apart, or confirm they're the same one, without a second
+call. Every type-specific field on a record is fenced to the record
+kind(s) that own it, and a record may not carry a field owned by some
+other kind (ADR 0006): a financial transaction requires an amount, a
+direction (`debit` or `credit`), and an account reference (institution,
+account type, masked number, optional owner), and may also carry a
+description and a category, but a call or message record must not carry
+any of those five fields; a call must not carry any of message's fields
+(`source_type`, `message_number`, `subject`, `body`, `viewed_at`), and a
+message must not carry any of call's (`call_type`, `call_number`,
+`duration_seconds`, `transcript`) - `analytics` and `events` are raw
+payload data both call and message carry. Both the case's record-list
+door and the single-record door
+accept a `record_type` query filter; asking the single-record door for a
+record of the wrong type answers 404 with the same body as an id that
+does not exist at all. Migrations are real alembic (`uv run alembic
+upgrade head` against `EVIDENCE_DATABASE_URL`), exercised both directions
+by `tests/test_migrations.py`. Configuration is environment-driven under
+the `EVIDENCE_` prefix. Not yet built: the dedicated file-level ledger
+table (ADR 0005 names it as future work) and relation-fact emission
+(ADR 0004).
 

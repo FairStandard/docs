@@ -339,7 +339,8 @@
                   "services/case-api/decisions/0001-the-foundation-store-is-cases-orders-and-docket-only",
                   "services/case-api/decisions/0002-phase-is-opaque-pack-vocabulary-behind-a-reader-seam",
                   "services/case-api/decisions/0003-no-servicekit-dependency-this-wave",
-                  "services/case-api/decisions/0004-reassessed-servicekit-adopt-the-header-di-only"
+                  "services/case-api/decisions/0004-reassessed-servicekit-adopt-the-header-di-only",
+                  "services/case-api/decisions/0005-the-case-carries-its-court-and-its-orders-carry-provisions"
                 ]
               },
               {
@@ -430,7 +431,8 @@
                   "services/evidence-api/decisions/0002-insert-only",
                   "services/evidence-api/decisions/0003-one-records-table",
                   "services/evidence-api/decisions/0004-no-relation-facts-to-emit-yet",
-                  "services/evidence-api/decisions/0005-download-door-is-audited"
+                  "services/evidence-api/decisions/0005-download-door-is-audited",
+                  "services/evidence-api/decisions/0006-a-third-record-kind-and-the-hash-on-the-wire"
                 ]
               },
               {
@@ -738,7 +740,9 @@
                   "services/servicekit/decisions/0004-publish-versioned-fixes-the-retry-state-law-dropped",
                   "services/servicekit/decisions/0005-fastapi-is-optional-the-header-deps-are-not-hard-wired",
                   "services/servicekit/decisions/0006-test-only-stream-helpers-leave-the-production-class",
-                  "services/servicekit/decisions/0007-a-heartbeat-keeps-a-long-handler-from-being-reclaimed"
+                  "services/servicekit/decisions/0007-a-heartbeat-keeps-a-long-handler-from-being-reclaimed",
+                  "services/servicekit/decisions/0008-a-shared-sibling-test-harness-not-two-copies",
+                  "services/servicekit/decisions/0009-a-reader-base-not-a-third-copy-of-the-http-ceremony"
                 ]
               }
             ]
@@ -755,7 +759,8 @@
                   "services/state-law-api/decisions/0002-jurisdiction-hash-partitioned-postgres",
                   "services/state-law-api/decisions/0003-shared-content-not-workspace-scoped",
                   "services/state-law-api/decisions/0004-remaining-owned-here-content-follows-the-versioned-partition-idiom",
-                  "services/state-law-api/decisions/0005-practice-area-validated-against-packs-api"
+                  "services/state-law-api/decisions/0005-practice-area-validated-against-packs-api",
+                  "services/state-law-api/decisions/0006-provision-sets-and-county-registry-are-content-supersession-is-data"
                 ]
               },
               {
