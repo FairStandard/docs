@@ -1,0 +1,92 @@
+---
+title: 'Get started with messages'
+description: 'Build a draft package, prune and finalize it, read it from the vault, and verify it against the live record.'
+kind: 'get-started'
+audience: 'developers'
+section: 'messages'
+sidebarTitle: 'Get started'
+---
+
+This guide takes you through the full <span className="kw">flow</span> `messaging-api` actually supports today: building a draft from one record, finalizing it into a hash-verified package, reading it back as the recipient, and checking it still matches the live source.
+
+## What you'll learn
+
+- How to build a draft package from a root record and prune it before it's sent
+- How to finalize a draft, and why the root can never be excluded
+- How to read a case's delivered packages from the recipient-side vault
+- How to re-verify a package against the live record at any time
+- Where notifications-api fits in, and why it never hears about any of this on its own
+
+## Before you begin
+
+You need a workspace ID, a bearer token, and a case ID the token's identity is on the team for. Every door on `messaging-api` verifies that token against `identity-api`'s real `/internal/verify` door and checks the caller's case relationship for that specific case — there is no header you can set to assert a relationship yourself. Building and finalizing a draft requires a relationship of `represented_party` or `self_represented_party`; reading the vault requires `representing_professional`. A relationship the service has never been told about before is denied by structure, not by a crash. You also need a `root_record_id` that already exists on `evidence-api` for the same case — `messaging-api` reads it, it never creates one.
+
+### Step 1: Build a draft from a root record
+
+```bash
+curl -X POST https://messaging-api.internal.fairstandard.com/internal/packages/draft \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Authorization: Bearer $SENDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "'"$CASE_ID"'", "root_record_id": "'"$ROOT_RECORD_ID"'"}'
+```
+
+This reads the root record from `evidence-api`, asks `relations-api` what else is connected to it, hydrates each discovered record, and pulls in the analytical ring of findings from `analysis-api` — fixed at two hops, never a caller-supplied depth. The response carries a `draft_id`, the `root_node_id`, every discovered node marked `included: true`, the links between them, and an `expires_at` timestamp.
+
+### Step 2: Decide which nodes to keep
+
+Nothing here is a server call — it's the review the platform's law requires before a package can exist. Walk the `nodes` array from step 1 and decide which ones the sender actually wants to send. The root node's id can never be dropped from the next step; every other node is the sender's choice.
+
+### Step 3: Finalize the package
+
+```bash
+curl -X POST https://messaging-api.internal.fairstandard.com/internal/packages \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Authorization: Bearer $SENDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"draft_id": "'"$DRAFT_ID"'", "included_node_ids": ["'"$ROOT_NODE_ID"'", "'"$OTHER_NODE_ID"'"]}'
+```
+
+The service prunes the graph to exactly these nodes, computes the `package_hash` over the result, appends one entry onto `evidence-api`'s audit chain, and only then makes the package readable. The response carries `package_id`, `package_hash`, and `delivered_at`.
+
+### Step 4: Read the package from the vault
+
+```bash
+curl https://messaging-api.internal.fairstandard.com/internal/cases/$CASE_ID/packages \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Authorization: Bearer $RECIPIENT_TOKEN"
+```
+
+This call needs a token that verifies as `representing_professional` on the case — the same token from step 1 will be refused here, by design, since sender and recipient are different ends of the same delivery.
+
+### Step 5: Verify the package against the live record
+
+```bash
+curl https://messaging-api.internal.fairstandard.com/internal/packages/$PACKAGE_ID/verify \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Authorization: Bearer $RECIPIENT_TOKEN"
+```
+
+The response reports `intact`, how many nodes were `checked_nodes`, any `mismatches`, and any `skipped_nodes` — notes and files have no live source to re-fetch, so they're counted as skipped rather than checked, never silently passed.
+
+## Tips
+
+- Nothing above touches `notifications-api`. If your integration wants the recipient alerted that a package arrived, you publish that event yourself — see this section's use case for exactly how.
+- A missing draft or package returns a `409`, not a `404` or a `403`, even when the caller's token doesn't verify at all: `finalize`, the vault, and `verify` all fetch the record first and check the relationship against it second.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Messages overview" icon="package" href="/messages/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="Send case context as a verified package" icon="send" href="/messages/developers/send-case-context-as-a-verified-package">
+    The same build-to-finalize flow as a standalone how-to.
+  </Card>
+  <Card title="Publish and manage notifications for a workspace" icon="bell" href="/messages/developers/publish-and-manage-notifications-for-a-workspace">
+    The separate delivery layer, and how to wire it up yourself.
+  </Card>
+  <Card title="Troubleshoot messages" icon="life-buoy" href="/messages/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

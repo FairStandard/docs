@@ -1,0 +1,37 @@
+---
+title: "How a package's hash proves nothing was altered"
+description: 'The traversal that builds a draft, the review gate that prunes it, and how verify checks a sealed package against live sources.'
+kind: 'concept'
+audience: 'developers'
+section: 'messages'
+sidebarTitle: "A package's hash"
+---
+
+A package's guarantee rests on three things happening in a fixed order: a bounded walk, a review gate the client can't skip, and a hash the server computes once the sender is done choosing. Verify later checks the result is still <span className="kw">anchored</span> to what it claims, not just internally consistent.
+
+## The walk is bounded and best-effort
+
+Draft starts from one root record and expands outward in two fixed rings: depth one, the structural ring, comes from `relations-api`'s two-hop lookup and is hydrated from `evidence-api`; depth two, the analytical ring, is findings pulled from `analysis-api`. `MAX_DEPTH` is hard-coded at two — there's no request field that changes it. The walk is a snapshot, not a guaranteed-complete graph: if an edge `relations-api` reports doesn't hydrate from `evidence-api` at draft time, it's dropped silently rather than retried or flagged, so a draft can under-represent what's connected to a record without erroring.
+
+## The review gate is enforced server-side
+
+A draft's nodes all start `included: true`, but inclusion at finalize time is decided fresh from the `included_node_ids` list the caller sends — a client UI can offer to prune anything, but the root node's id can never be removed from that list; the server rejects a finalize call that tries. This is why the draft step and the finalize step are separate calls rather than one: the gap between them is where a human decides what actually gets sent.
+
+## The hash is computed once, at finalize
+
+`package_hash` is computed over the canonical form of exactly what finalize kept: the included nodes, the links between them, the root, and the traversal settings that produced the draft. It is never accepted from the caller and never recomputed from a client-supplied value — `FinalizeIn` has no hash field at all. Anything excluded at review never enters the hash input, so a pruned node leaves no trace for verify to later complain about.
+
+## Verify re-checks against live sources, not against itself
+
+`GET /internal/packages/{package_id}/verify` re-fetches each included record from its live source and compares it against what's frozen in the package. Three outcomes are distinct: a node that still matches is `checked`, a node whose live version has changed is a `mismatch`, and a node with no live source to refetch — a note, or a file — is `skipped`. Skipped is not the same as passed: it means verify has nothing to compare against, not that nothing changed.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Send case context as a verified package" icon="send" href="/messages/developers/send-case-context-as-a-verified-package">
+    The draft-to-finalize flow this page explains.
+  </Card>
+  <Card title="Troubleshoot messages" icon="life-buoy" href="/messages/developers/troubleshooting">
+    What a mismatch, a skip, and a dropped edge look like in practice.
+  </Card>
+</Columns>

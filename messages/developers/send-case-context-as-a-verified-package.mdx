@@ -1,0 +1,69 @@
+---
+title: 'Send case context as a verified package'
+description: 'Build a draft from a root record, prune it, and finalize it into a hash-sealed package the recipient can re-verify later.'
+kind: 'how-to'
+audience: 'developers'
+section: 'messages'
+sidebarTitle: 'Send a verified package'
+---
+
+This walks through the only send path `messaging-api` has: turning one root record into a package whose hash is <span className="kw">sealed</span> on the server, not on the sender's own claim about what it contains.
+
+## Before you begin
+
+You need a case ID, a workspace ID scoped to that case, a root record id that already exists on `evidence-api`, and a token that verifies as `represented_party` or `self_represented_party` on the case.
+
+1. Draft from the root record.
+
+   ```bash
+   curl -X POST https://messaging-api.internal.fairstandard.com/internal/packages/draft \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $SENDER_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"case_id": "'"$CASE_ID"'", "root_record_id": "'"$ROOT_RECORD_ID"'"}'
+   ```
+
+   `case_id` and `root_record_id` are the only two fields this door accepts. The service reads the root from `evidence-api`, asks `relations-api` for the structural ring one hop out, hydrates each edge it finds, then adds the analytical ring — findings from `analysis-api` — one hop past that. Depth is fixed at two; there is no field to ask for more or less.
+
+2. Prune the draft.
+
+   Read the `nodes` array the draft returned. Each node starts `included: true`. Drop the ids the sender doesn't want sent — everything except the root, which the next step will refuse to exclude.
+
+3. Finalize.
+
+   ```bash
+   curl -X POST https://messaging-api.internal.fairstandard.com/internal/packages \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $SENDER_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"draft_id": "'"$DRAFT_ID"'", "included_node_ids": ["'"$ROOT_NODE_ID"'"]}'
+   ```
+
+   The service prunes the frozen graph down to exactly these ids, computes `package_hash` over the resulting nodes, links, root, and traversal settings, and appends one entry onto `evidence-api`'s existing audit chain. A caller can never send a precomputed hash — `FinalizeIn` only takes `draft_id` and `included_node_ids`.
+
+4. Attach a note first, if you need to (optional).
+
+   ```bash
+   curl -X POST https://messaging-api.internal.fairstandard.com/internal/notes \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $SENDER_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"case_id": "'"$CASE_ID"'", "record_id": "'"$ROOT_RECORD_ID"'", "body": "See page 3."}'
+   ```
+
+   A note attaches to a record so it can travel inside a package built from that record later. It has no hash of its own and doesn't appear anywhere until a package that includes its record is finalized.
+
+## What happens next
+
+The package is invisible until its audit-chain entry is anchored; if the append fails, the row stays hidden and the draft is still there to retry from. Once anchored, the recipient's vault (`GET /internal/cases/{case_id}/packages`) can see it, and nothing about it can change afterward — a later edit to the root record doesn't touch the sealed package, it only shows up the next time someone re-verifies.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Get started with messages" icon="rocket" href="/messages/developers/get-started">
+    The same flow end to end, including reading the vault as the recipient.
+  </Card>
+  <Card title="How a package's hash proves nothing was altered" icon="shield-check" href="/messages/developers/how-a-packages-hash-proves-nothing-was-altered">
+    What the hash actually covers and how verify checks it later.
+  </Card>
+</Columns>

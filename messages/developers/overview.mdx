@@ -1,0 +1,44 @@
+---
+title: 'Messages overview'
+description: "What backs Messages today: messaging-api's send-context Package flow and notifications-api's delivery layer, and why cooperation has no door yet."
+kind: 'overview'
+audience: 'developers'
+section: 'messages'
+sidebarTitle: 'Overview'
+---
+
+The messages section covers three capabilities in the platform's canon register: messaging, notifications, and cooperation. This page maps each one to what actually exists in this build today, so you know which door to call, which one is real but unconnected, and which one you would have to build yourself, carrying case <span className="kw">context</span> from one party to another.
+
+## How it works
+
+`messaging-api` has exactly one real feature: the send-context Package flow. A sender calls `POST /internal/packages/draft` with a `case_id` and a `root_record_id`; the service walks outward through `evidence-api`, `analysis-api`, and `relations-api` and freezes what it finds into a Draft graph. The sender reviews it and calls `POST /internal/packages` with the `included_node_ids` to keep — the root can never be pruned, and the hash is computed only here, on the server. A finalized package appends one entry onto `evidence-api`'s audit chain and becomes readable only once anchored; a failed append leaves the draft intact for a retry. The recipient reads delivered packages through a read-only vault (`GET /internal/cases/{case_id}/packages`, `GET /internal/packages/{package_id}`) and can re-verify any of them against the live record (`GET /internal/packages/{package_id}/verify`). Every door checks the caller's case relationship against `identity-api`'s real `/internal/verify` door, never an asserted header: sending needs `represented_party` or `self_represented_party`; the vault needs `representing_professional`. See [messaging-api's overview](/services/messaging-api/index) and [domain model](/services/messaging-api/domain-model).
+
+Conversations and marketplace connections — an ordinary message thread — are not built; `messaging-api`'s own `README.md` names both as still ahead. There is no door for a plain message, only a hash-verified snapshot of a record.
+
+`notifications-api` is a separate, unrelated service: the platform's one generic delivery layer. Any producer publishes a `NotificationEvent` (workspace, recipient, a `kind` string, subject, link, and its own provenance id), and fan-out delivers it to whichever channels the recipient's preferences allow — `in_app` is real, `email` and `push` are Fakes that record what they would have sent. No producer in this build, including `messaging-api`, actually publishes to it. See [notifications-api's overview](/services/notifications-api/index) and [domain model](/services/notifications-api/domain-model).
+
+Cooperation has no service door at all. No repo in this build, including `analysis-api`, ever uses the word "cooperation." The nearest real building block is `analysis-api`'s general violation-detection engine, with condition types like `communication_channel` and `call_unanswered` that read like pieces of a cooperation picture — but it computes no response-time trend, isn't scoped to messaging, and is the same generic findings door the evidence and findings section already documents. See [that section's developers docs](/evidence-and-findings/developers/overview) for what it actually does.
+
+## What you can do here
+
+- **Build a draft from one root record.** `POST /internal/packages/draft`, then review the nodes it discovered.
+- **Finalize a package.** `POST /internal/packages` with the node ids you kept; the root is never optional.
+- **Read a case's delivered packages.** `GET /internal/cases/{case_id}/packages`, open to the case's representing professional only.
+- **Fetch and re-verify one package.** `GET /internal/packages/{package_id}` and `.../verify`, checked against the live source at any time.
+- **Attach a short note to a record.** `POST /internal/notes` — notes exist so they can travel inside a future package.
+- **Publish, read, and manage notifications on notifications-api.** `POST /internal/publish`, `GET /internal/feed`, and `GET`/`PUT /internal/preferences`, entirely separate from messaging.
+
+## Availability
+
+Messaging and notifications both carry a Basic tier requirement in the canon register and no per-case entitlement gate — there is no `entitlements-api` check to make before calling any door named above. Cooperation carries an Advanced tier requirement and is marked per-case enablable in the register, but since no service implements it, that entitlement has nothing to gate yet.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with messages" icon="rocket" href="/messages/developers/get-started">
+    Build a draft, finalize it, and read it back from the vault.
+  </Card>
+  <Card title="How a package's hash proves nothing was altered" icon="shield-check" href="/messages/developers/how-a-packages-hash-proves-nothing-was-altered">
+    The walk, the review gate, and where verification can and can't check a node.
+  </Card>
+</Columns>

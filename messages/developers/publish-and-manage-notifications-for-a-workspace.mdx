@@ -1,0 +1,82 @@
+---
+title: 'Publish and manage notifications for a workspace'
+description: 'Set a channel preference, publish an event, read the feed, and mark it read on notifications-api.'
+kind: 'how-to'
+audience: 'developers'
+section: 'messages'
+sidebarTitle: 'Publish notifications'
+---
+
+`notifications-api` is a generic delivery layer any service can call — it has no idea messaging exists. This walks through setting a preference, publishing an event, and reading it back through the recipient's <span className="kw">channels</span>.
+
+## Before you begin
+
+You need a workspace ID and a bearer token. Publishing needs the recipient's user id — `notifications-api` doesn't look that up for you from a case.
+
+1. Set a channel preference (optional).
+
+   ```bash
+   curl -X PUT https://notifications-api.internal.fairstandard.com/internal/preferences \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"kind_pattern": "message.received", "channel": "email", "allow": false}'
+   ```
+
+   A recipient with no preference on file allows every channel by default. `kind_pattern` can be an exact kind string or a `prefix.*` wildcard; an exact match always wins over a wildcard for the same kind.
+
+2. Publish an event.
+
+   ```bash
+   curl -X POST https://notifications-api.internal.fairstandard.com/internal/publish \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "recipient_id": "'"$RECIPIENT_ID"'",
+       "kind": "message.package_delivered",
+       "subject": "A new package was delivered on your case",
+       "link": "https://app.fairstandard.com/cases/'"$CASE_ID"'/messages",
+       "source_service": "messaging-api",
+       "provenance": "'"$PACKAGE_ID"'"
+     }'
+   ```
+
+   `kind`, `source_service`, and `provenance` are open strings — `notifications-api` structure-validates the event but doesn't check that the kind is one it's seen before. Fan-out then delivers the event to every channel the recipient's preferences allow.
+
+3. Read the feed.
+
+   ```bash
+   curl https://notifications-api.internal.fairstandard.com/internal/feed \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $RECIPIENT_TOKEN"
+   ```
+
+   This only returns what the `in_app` channel delivered — the one channel that's real. `email` and `push` are Fakes that record what they would have sent and don't reach an actual inbox or device.
+
+4. Mark it read.
+
+   ```bash
+   curl -X POST https://notifications-api.internal.fairstandard.com/internal/feed/$NOTIFICATION_ID/read \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $RECIPIENT_TOKEN"
+
+   curl -X POST https://notifications-api.internal.fairstandard.com/internal/feed/read-all \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Authorization: Bearer $RECIPIENT_TOKEN"
+   ```
+
+## What happens next
+
+Nothing on `messaging-api` calls step 2 for you — no service in this build publishes to `notifications-api` on its own, so an integration that wants a recipient alerted has to make that call itself after the event it cares about happens. `email` and `push` staying Fakes means an integration testing against them will never see a real message land outside `in_app`.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your app needs to notify someone when a package arrives" icon="bell-ring" href="/messages/developers/your-app-needs-to-notify-someone-when-a-package-arrives">
+    Wiring this up right after a package finalizes.
+  </Card>
+  <Card title="Messages overview" icon="package" href="/messages/developers/overview">
+    Why notifications-api and messaging-api don't talk to each other yet.
+  </Card>
+</Columns>

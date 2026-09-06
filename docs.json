@@ -249,6 +249,18 @@
             ]
           },
           {
+            "group": "Messages for developers",
+            "pages": [
+              "messages/developers/overview",
+              "messages/developers/get-started",
+              "messages/developers/send-case-context-as-a-verified-package",
+              "messages/developers/publish-and-manage-notifications-for-a-workspace",
+              "messages/developers/how-a-packages-hash-proves-nothing-was-altered",
+              "messages/developers/your-app-needs-to-notify-someone-when-a-package-arrives",
+              "messages/developers/troubleshooting"
+            ]
+          },
+          {
             "group": "billing-payments-api",
             "pages": [
               "services/billing-payments-api/index",

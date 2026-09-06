@@ -1,0 +1,56 @@
+---
+title: 'Your app needs to notify someone when a package arrives'
+description: 'No service links a delivered package to a notification. Publish the event yourself right after finalize succeeds.'
+kind: 'use-case'
+audience: 'developers'
+section: 'messages'
+sidebarTitle: 'Notify on package arrival'
+---
+
+A recipient's Messages screen should tell them the moment a package lands, but `messaging-api` doesn't tell anyone anything on its own. Nothing wires a finalized package to a notification — your integration has to <span className="kw">publish</span> that event itself.
+
+## What to do
+
+Finalize the package as usual:
+
+```bash
+curl -X POST https://messaging-api.internal.fairstandard.com/internal/packages \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Authorization: Bearer $SENDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"draft_id": "'"$DRAFT_ID"'", "included_node_ids": ["'"$ROOT_NODE_ID"'"]}'
+```
+
+The response carries `package_id` and `delivered_at`. Immediately after a successful finalize, publish an event on `notifications-api` yourself:
+
+```bash
+curl -X POST https://notifications-api.internal.fairstandard.com/internal/publish \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Authorization: Bearer $SENDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient_id": "'"$RECIPIENT_USER_ID"'",
+    "kind": "message.package_delivered",
+    "subject": "A new package was delivered on your case",
+    "link": "https://app.fairstandard.com/cases/'"$CASE_ID"'/messages",
+    "source_service": "messaging-api",
+    "provenance": "'"$PACKAGE_ID"'"
+  }'
+```
+
+Two things above are your responsibility, not the platform's. First, `recipient_id` on `notifications-api` is a user id, and `messaging-api` never hands you one — it only verifies that a caller's token has a `representing_professional` relationship on the case. There is no roster door anywhere in this build that looks up who that person is from a case id; if your integration doesn't already know the recipient's user id from elsewhere, it can't complete this call. Second, pick a `kind` string and keep it consistent — `message.package_delivered` above is a suggestion, not a registered value; `notifications-api` structure-validates the event but doesn't check the kind against a fixed list.
+
+## What Vero does for you
+
+Once published, `notifications-api` looks up the recipient's channel preferences and fans the event out to every channel that isn't blocked — `in_app` writes a real row the recipient's feed will return; `email` and `push` are Fakes that record what they would have sent without reaching an inbox or a device. A recipient who's never set a preference gets the event on every channel by default. None of this requires your integration to know which channels exist or which the recipient prefers — that logic lives entirely on `notifications-api`.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Publish and manage notifications for a workspace" icon="bell" href="/messages/developers/publish-and-manage-notifications-for-a-workspace">
+    The full publish, feed, and preference flow this use case draws from.
+  </Card>
+  <Card title="Send case context as a verified package" icon="send" href="/messages/developers/send-case-context-as-a-verified-package">
+    The finalize call this use case picks up right after.
+  </Card>
+</Columns>
