@@ -25,3 +25,65 @@ h1 em, h2 em {
 :root { --vero-kw: #2178c3; }
 .dark { --vero-kw: #82b7ef; }
 .kw { font-style: italic; color: var(--vero-kw); }
+
+/* Landing page (index.mdx, mode: frame). Hairline rules, no shadows, generous space.
+   Colours come from the theme: rgb(var(--primary)) and the current text colour. */
+.landing { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+.landing-eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgb(var(--primary));
+}
+.landing-title { margin: 0 0 1rem; font-size: 2.5rem; line-height: 1.1; }
+.landing-lead { max-width: 40rem; margin: 0 0 1.75rem; font-size: 1.0625rem; line-height: 1.6; }
+.landing-h2 { margin: 3rem 0 1rem; font-size: 1.625rem; }
+.landing .surface-grid, .landing .chips, .landing .need-rows { margin-bottom: 1rem; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2.5rem; }
+.chip {
+  display: inline-flex; flex-direction: column; gap: 0.125rem;
+  padding: 0.5rem 0.875rem; border-radius: 0.625rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  text-decoration: none; color: inherit;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.chip:hover { border-color: rgb(var(--primary)); background: color-mix(in srgb, rgb(var(--primary)) 6%, transparent); }
+.chip-task { font-size: 0.9375rem; font-weight: 600; line-height: 1.3; }
+.chip-name { font-size: 0.75rem; opacity: 0.7; }
+
+.surface-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1rem; }
+.surface-card {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 1.25rem 1.375rem; border-radius: 0.875rem;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.surface-card h3 { margin: 0; font-size: 1.1875rem; }
+.surface-card p { margin: 0; font-size: 0.9375rem; line-height: 1.55; flex: 1; }
+.surface-cta { align-self: flex-start; font-weight: 600; font-size: 0.9375rem; color: rgb(var(--primary)); text-decoration: none; }
+.surface-cta::after { content: " →"; }
+.surface-cta:hover { text-decoration: underline; }
+
+.need-rows { border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+.need-row {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.5rem 1.5rem;
+  padding: 0.875rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.need-q { flex: 1 1 24rem; font-style: italic; }
+.need-a { font-weight: 600; color: rgb(var(--primary)); text-decoration: none; white-space: nowrap; }
+.need-a::after { content: " →"; }
+.need-a:hover { text-decoration: underline; }
+
+.account-steps { list-style: none; margin: 0; padding: 0; counter-reset: none; }
+.account-steps li { display: flex; gap: 0.875rem; align-items: flex-start; padding: 0.5rem 0; line-height: 1.55; }
+.step-n {
+  flex: 0 0 1.75rem; height: 1.75rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.8125rem; font-weight: 600;
+  color: rgb(var(--primary)); border: 1px solid rgb(var(--primary));
+}
+.landing-advice { margin-top: 2.5rem; font-size: 0.875rem; opacity: 0.75; }
+
+@media (max-width: 40rem) {
+  .landing { padding: 1.5rem 1rem 3rem; }
+  .landing-title { font-size: 2rem; }
+  .need-a { white-space: normal; }
+}

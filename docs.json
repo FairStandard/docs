@@ -34,8 +34,7 @@
           {
             "group": "Get started",
             "pages": [
-              "introduction",
-              "who-its-for"
+              "index"
             ]
           },
           {
@@ -162,14 +161,6 @@
                   "messages/attorneys/troubleshooting"
                 ]
               }
-            ]
-          },
-          {
-            "group": "Core concepts",
-            "pages": [
-              "concepts/law-assembly-engine",
-              "attorneys/law-assembly",
-              "concepts/roles"
             ]
           },
           {
@@ -903,6 +894,26 @@
     {
       "source": "/attorneys/managing-clients",
       "destination": "/your-firm/attorneys/add-a-client-or-colleague-to-a-case"
+    },
+    {
+      "source": "/introduction",
+      "destination": "/"
+    },
+    {
+      "source": "/who-its-for",
+      "destination": "/"
+    },
+    {
+      "source": "/concepts/roles",
+      "destination": "/"
+    },
+    {
+      "source": "/concepts/law-assembly-engine",
+      "destination": "/deadlines-and-next-steps/litigants/how-deadlines-and-next-steps-work-together"
+    },
+    {
+      "source": "/attorneys/law-assembly",
+      "destination": "/deadlines-and-next-steps/attorneys/how-deadline-exposure-rolls-up-across-your-caseload"
     }
   ]
 }

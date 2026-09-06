@@ -8,7 +8,7 @@ Two tabs: **Platform Overview** (the product guide, written by people) and **API
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| `introduction.mdx`, `concepts/`, `case-management/`, `learning-center/`, `marketplace/`, `attorneys/`, … | Platform Overview tab | People |
+| `index.mdx` | The landing page: task chips, one card per section, "Which one do you need?", Create an account | People |
 | `<section>/litigants/*.mdx`, `<section>/attorneys/*.mdx` | Platform Overview tab, one folder per reader per surface | People, to `anatomy.json` |
 | `<section>/developers/*.mdx` | Developer guides in the API Documentation tab | People, to `anatomy.json` |
 | `anatomy.json` | The sections, audiences, page kinds, and rules the hand-written pages follow | People |
