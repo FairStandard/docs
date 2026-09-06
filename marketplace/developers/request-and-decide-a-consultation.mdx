@@ -1,0 +1,72 @@
+---
+title: 'Request and decide a consultation'
+description: "Filter the public directory, send a consultation request with no workspace header, then list, accept, or decline it from the queue."
+kind: 'how-to'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Request and decide'
+---
+
+A consultation request starts on the one public door that hands a listing's org a new row in its own <span className="kw">queue</span>, and ends on one of two internal doors that decide it. This walks through both sides.
+
+## Before you begin
+
+The public directory and request-submission doors take no `X-Workspace-Id` header at all — a caller with no workspace, no case, and no account can use both. Every queue door after that — listing, deciding, or reading the queue — takes `X-Workspace-Id` and `org_id`, the same as every other org-scoped door on this service.
+
+1. Filter the public directory.
+
+   ```bash
+   curl "https://marketplace-api.internal.fairstandard.com/public/listings?specialty=child-custody&jurisdiction=TX-Travis&service_kind=consultation"
+   ```
+
+   All three query parameters are optional and match by exact value, not by searching biography text. Only `active` listings appear; a `draft` or `inactive` listing never does, no matter how the filters are set. The response never includes `subscription_ref`, `workspace_id`, or `org_id` — those fields are excluded by the serializer this door uses, not filtered out after the fact.
+
+2. Send a consultation request.
+
+   ```bash
+   curl -X POST https://marketplace-api.internal.fairstandard.com/public/listings/$LISTING_ID/requests \
+     -H "Content-Type: application/json" \
+     -d '{"requester_ref": "session:anon:773a", "message": "Looking for help with a custody modification."}'
+   ```
+
+   No workspace header on this call either. `requester_ref` is a free-form external reference your integration supplies — canon's rule that a valid state is having no case applies here exactly: nothing about this request requires a case, an org, or an engagement on the requester's side. A request against a listing that is not `active` returns `404`, the same response a nonexistent listing would give.
+
+3. List the queue.
+
+   ```bash
+   curl https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/requests \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   This requires `org_id` as a query parameter alongside the workspace header. Every request against that listing comes back, regardless of status — `queued`, `accepted`, or `declined` — so your integration filters by `status` itself if it only wants the open ones.
+
+4. Accept or decline the request.
+
+   ```bash
+   curl -X POST https://marketplace-api.internal.fairstandard.com/internal/requests/$REQUEST_ID/accept \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"org_id": 42}'
+
+   curl -X POST https://marketplace-api.internal.fairstandard.com/internal/requests/$REQUEST_ID/decline \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"org_id": 42}'
+   ```
+
+   Both set `decided_at` and flip `status`. Accepting additionally persists a `ConsultationHandoff` row — the durable fact that this request was accepted, independent of anything downstream — and calls three `Fake` seams toward identity-api, case-api, and messaging-api. None of the three has a receiving door built yet, so accepting a request does not itself open a message thread, link an account, or create a case.
+
+## What happens next
+
+There is no door to read a `ConsultationHandoff` row directly; the only visible evidence an accept happened is the request's own `status` and `decided_at` on the queue list. If your integration needs to react to an acceptance, it has to poll `GET /internal/listings/{listing_id}/requests` and watch for the status change — see this section's use case on exactly that gap.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Your app needs to know when a consultation is accepted" icon="bell" href="/marketplace/developers/your-app-needs-to-know-when-a-consultation-is-accepted">
+    What acceptance actually triggers today, and what your integration has to build itself.
+  </Card>
+  <Card title="Create and activate a listing" icon="upload" href="/marketplace/developers/create-and-activate-a-listing">
+    What has to exist before a listing can receive a request at all.
+  </Card>
+</Columns>

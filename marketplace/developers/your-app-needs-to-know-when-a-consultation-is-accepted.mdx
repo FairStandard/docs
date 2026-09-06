@@ -1,0 +1,38 @@
+---
+title: 'Your app needs to know when a consultation is accepted'
+description: 'Read the queue for a status change, and understand why an accepted request has no identity, case, or messaging effect yet.'
+kind: 'use-case'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Know when accepted'
+---
+
+Your integration wants to react the moment a provider accepts a consultation request — open a thread, start onboarding, whatever comes next for your product. `marketplace-api` records that acceptance as a real, <span className="kw">durable</span> fact, but it does not push it anywhere, and the three downstream effects you might expect it to trigger are not built yet.
+
+## What to do
+
+Poll the queue for the listing you care about and watch `status`:
+
+```bash
+curl https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/requests \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+Each row's `status` is `queued`, `accepted`, or `declined`, and `decided_at` is set the moment a decision is made. There is no webhook, no event stream, and no separate door to read a `ConsultationHandoff` row directly — the request list is the only visible surface an acceptance shows up on. If your integration needs near-real-time reaction, it has to poll this door on its own schedule; nothing here pushes to you.
+
+## What Vero does for you
+
+When `POST /internal/requests/{request_id}/accept` runs, `store.accept_request` does two things every time, regardless of anything downstream: it sets the request's `status` to `accepted` and `decided_at` to now, and it persists a `ConsultationHandoff` row recording who (`requester_ref`), which listing, which request, and when. That row is the durable record that the accept genuinely happened — it does not depend on any other service existing.
+
+`accept_request` also calls three seams with the same information a real integration would need: `IdentityHandoff.notify_consultation_accepted`, `CaseHandoff.notify_consultation_accepted`, and `MessagingHandoff.open_channel`. All three are `Fake` implementations today — `FakeIdentityHandoff`, `FakeCaseHandoff`, `FakeMessagingHandoff` — because identity-api, case-api, and messaging-api have not built the receiving doors these calls target. Nothing about accepting a request links an account, opens a case, or starts a message thread on any of those three services. If your product needs one of those three effects, your integration has to build it: read the accepted request off the queue and take the action yourself, the same way you would after any other consultation you learned about outside Vero.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Request and decide a consultation" icon="send" href="/marketplace/developers/request-and-decide-a-consultation">
+    The full request-through-decision flow this use case builds on.
+  </Card>
+  <Card title="Marketplace overview" icon="book-open" href="/marketplace/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+</Columns>

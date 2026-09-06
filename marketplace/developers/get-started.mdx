@@ -1,0 +1,116 @@
+---
+title: 'Get started with the Marketplace'
+description: 'Create a listing, attach a profile, activate it against a real subscription, browse the public directory, and send and accept a consultation request.'
+kind: 'get-started'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Get started'
+---
+
+This guide takes you through the full <span className="kw">flow</span> `marketplace-api` supports: creating a listing, attaching its profile, activating it against a real subscription check, browsing the public directory, and sending and accepting a consultation request.
+
+## What you'll learn
+
+- How to create a listing and attach a profile, and which fields are registry-backed vocabulary
+- Why activation can fail with a `402`, and what has to be true on billing-payments-api's side for it to succeed
+- How the public directory and consultation-request doors differ from every other door on this service
+- What actually happens when a consultation request is accepted, and what does not happen yet
+
+## Before you begin
+
+You need an `org_id` and a `workspace_id` for the org creating the listing, and a `subscription_ref` billing-payments-api already has an active subscription against for that workspace — activation calls that door for real. Listing, profile, and queue doors all take `X-Workspace-Id`; the public directory and consultation-request doors take none at all.
+
+### Step 1: Create a listing
+
+```bash
+curl -X POST https://marketplace-api.internal.fairstandard.com/internal/listings \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"org_id": 42, "provider_ref": "identity:attorney:8831"}'
+```
+
+The response carries the new `id` and `status: "draft"`. `provider_ref` is an external identity-api reference; this service keeps no local copy of who that person is, only that a listing exists for them.
+
+### Step 2: Attach a profile
+
+```bash
+curl -X PUT https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/profile \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "org_id": 42,
+    "display_name": "Dana Reyes, Family Law",
+    "headline": "Divorce and custody in Travis County",
+    "biography": "Fifteen years representing parents through custody and divorce.",
+    "specialties": ["family-law", "child-custody"],
+    "jurisdictions": ["TX-Travis"],
+    "service_kinds": ["consultation", "full-representation"]
+  }'
+```
+
+`specialties` and `service_kinds` must be keys already in `registry_seed.json`; `jurisdictions` is a free-form list, not a registry. A listing still in `draft` never appears on the public directory, no matter how complete its profile is.
+
+### Step 3: Activate the listing
+
+```bash
+curl -X POST https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/activate \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"org_id": 42, "subscription_ref": "sub_9f21a"}'
+```
+
+This calls billing-payments-api's `GET /subscriptions/lookup/active` for `sub_9f21a` under `$WORKSPACE_ID`. If it comes back active, `status` flips to `active` and the listing publishes to search-api's index. If it does not, you get `402 Payment Required` and the listing stays a `draft` — that is a billing question for the org, not a bug in your request.
+
+### Step 4: Browse the public directory
+
+```bash
+curl "https://marketplace-api.internal.fairstandard.com/public/listings?specialty=child-custody&jurisdiction=TX-Travis"
+```
+
+No `X-Workspace-Id` here — this is the same door a stranger with no account calls. Only `active` listings appear, and the response never includes `subscription_ref`, `workspace_id`, or `org_id`.
+
+### Step 5: Send a consultation request
+
+```bash
+curl -X POST https://marketplace-api.internal.fairstandard.com/public/listings/$LISTING_ID/requests \
+  -H "Content-Type: application/json" \
+  -d '{"requester_ref": "session:anon:773a", "message": "Looking for help with a custody modification."}'
+```
+
+Again, no workspace header — `requester_ref` is whatever free-form reference your integration uses for the person asking. The request lands in that listing's org's queue automatically.
+
+### Step 6: Work the queue
+
+```bash
+curl https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/requests \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+
+curl -X POST https://marketplace-api.internal.fairstandard.com/internal/requests/$REQUEST_ID/accept \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"org_id": 42}'
+```
+
+Accepting persists a `ConsultationHandoff` row and calls three seams toward identity-api, case-api, and messaging-api — all `Fake` today, so nothing on those services actually reacts yet. Plan on your own integration handling the follow-up until those doors ship.
+
+## Tips
+
+- Listing, profile, and queue doors need `org_id` in the body on top of `X-Workspace-Id` in the header — both are checked, and a mismatch on either one returns `404`, not `403`.
+- The public directory and request-submission doors are the only two that never take a workspace header. Every other door does.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Marketplace overview" icon="book-open" href="/marketplace/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="Create and activate a listing" icon="upload" href="/marketplace/developers/create-and-activate-a-listing">
+    The create-through-activate flow as a standalone how-to.
+  </Card>
+  <Card title="Request and decide a consultation" icon="send" href="/marketplace/developers/request-and-decide-a-consultation">
+    The public-request-through-queue-decision flow, one step at a time.
+  </Card>
+  <Card title="Troubleshoot the Marketplace" icon="life-buoy" href="/marketplace/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

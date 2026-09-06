@@ -314,6 +314,18 @@
             ]
           },
           {
+            "group": "Marketplace for developers",
+            "pages": [
+              "marketplace/developers/overview",
+              "marketplace/developers/get-started",
+              "marketplace/developers/create-and-activate-a-listing",
+              "marketplace/developers/request-and-decide-a-consultation",
+              "marketplace/developers/how-listing-activation-checks-a-real-subscription",
+              "marketplace/developers/your-app-needs-to-know-when-a-consultation-is-accepted",
+              "marketplace/developers/troubleshooting"
+            ]
+          },
+          {
             "group": "billing-payments-api",
             "pages": [
               "services/billing-payments-api/index",

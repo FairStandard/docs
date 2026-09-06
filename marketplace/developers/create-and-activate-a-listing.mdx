@@ -1,0 +1,81 @@
+---
+title: 'Create and activate a listing'
+description: 'Create an org-scoped listing, attach its profile, and activate it, including the real billing check that can refuse activation.'
+kind: 'how-to'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Create and activate'
+---
+
+Creating a listing and making it visible are two different steps on `marketplace-api`, and the second one is <span className="kw">gated</span> on a real check against billing-payments-api. This walks through both, plus the profile that sits between them.
+
+## Before you begin
+
+Every door here requires `X-Workspace-Id` on the header and `org_id` in the body; both are checked on every call, and a listing whose `org_id` does not match the body you sent returns `404`, the same as a listing that does not exist. Activation additionally needs a `subscription_ref` that billing-payments-api can confirm is active for your workspace — there is no way to activate a listing without a real, checked subscription today.
+
+1. Create the listing.
+
+   ```bash
+   curl -X POST https://marketplace-api.internal.fairstandard.com/internal/listings \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"org_id": 42, "provider_ref": "identity:attorney:8831"}'
+   ```
+
+   The response's `status` is `draft`. `provider_ref` is an external identity-api reference; this service stores no local copy of the person, only that a listing exists for them and which org it belongs to.
+
+2. Attach the profile.
+
+   ```bash
+   curl -X PUT https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/profile \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "org_id": 42,
+       "display_name": "Dana Reyes, Family Law",
+       "headline": "Divorce and custody in Travis County",
+       "biography": "Fifteen years representing parents through custody and divorce.",
+       "specialties": ["family-law", "child-custody"],
+       "jurisdictions": ["TX-Travis"],
+       "service_kinds": ["consultation", "full-representation"]
+     }'
+   ```
+
+   `specialties` and `service_kinds` must be registry keys already seeded from `registry_seed.json`; an unrecognized key is stored as-is and simply never matches a discovery filter. `jurisdictions` is a free-form list. This door is a full upsert — calling it again replaces every field, not just the ones you send.
+
+3. Activate the listing.
+
+   ```bash
+   curl -X POST https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/activate \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"org_id": 42, "subscription_ref": "sub_9f21a"}'
+   ```
+
+   `marketplace-api` calls billing-payments-api's `GET /subscriptions/lookup/active` for `sub_9f21a` under `$WORKSPACE_ID`, through servicekit's doorway contract with retries. If the subscription is active, `status` flips to `active`, `subscription_ref` is stored on the listing, and the listing publishes to search-api's index as publicly visible. If it is not, the door returns `402 Payment Required` and the listing stays `draft` — that is a billing question, not something wrong with the request body.
+
+4. Deactivate it, when needed.
+
+   ```bash
+   curl -X POST https://marketplace-api.internal.fairstandard.com/internal/listings/$LISTING_ID/deactivate \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"org_id": 42}'
+   ```
+
+   `status` becomes `inactive`, the listing drops off the public directory immediately, and search-api's index republishes with the same status so it stops surfacing there too.
+
+## What happens next
+
+An `active` listing appears on `GET /public/listings` the moment it matches a filter — there is no delay and no separate publish step to run yourself. A listing you deactivate or that never got activated in the first place simply does not appear, with no distinct error state for either case from a stranger's point of view.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="How listing activation checks a real subscription" icon="link" href="/marketplace/developers/how-listing-activation-checks-a-real-subscription">
+    What the billing seam actually does and why the 402 is deliberate.
+  </Card>
+  <Card title="Request and decide a consultation" icon="send" href="/marketplace/developers/request-and-decide-a-consultation">
+    What an active listing makes possible next.
+  </Card>
+</Columns>

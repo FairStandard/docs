@@ -1,0 +1,37 @@
+---
+title: 'How listing activation checks a real subscription'
+description: "Why activation calls billing-payments-api's live subscription door instead of a stub, and what a failed check returns."
+kind: 'concept'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Activation and billing'
+---
+
+Canon rules that an org pays for its Marketplace listing, and `marketplace-api` enforces that at exactly one moment: activation. `POST /internal/listings/{listing_id}/activate` will not flip a listing to `active` without a <span className="kw">seam</span> call confirming a live subscription behind it, and that seam speaks to a real service today, not a fake one.
+
+## The seam has two adapters behind one protocol
+
+`billing_reader.py` defines `BillingReader` as a `Protocol` with one method, `has_active_subscription(workspace_id, subscription_ref)`. `FakeBillingReader` keeps an in-memory set of active references and is what every test in this repo runs against. `HttpBillingReader` is what `main.py`'s lifespan actually wires in: it calls billing-payments-api's `GET /subscriptions/lookup/active`, passing `X-Workspace-Id` and `subscribed_ref`, through servicekit's doorway contract — retry-with-jitter on top of an `httpx.AsyncClient`, with `Rejected` and `Unavailable` as the only two failure shapes a caller sees. `Settings.billing_api_url` (env `MARKETPLACE_BILLING_API_URL`) points it at a running billing-payments-api; there is no third option and no way to activate a listing without going through this seam.
+
+## The ADR's history matters here, because the seam changed under it
+
+`docs/adr/0003-listing-activation-requires-billingreader-fake-only.md` originally recorded `BillingReader` as Fake-only, because billing-payments-api had not built a subscription-read door yet. That ADR carries its own addendum, dated the same day billing-payments-api shipped that door: `HttpBillingReader` replaced the Fake-only wiring in `main.py`, and the `402` contract on the activation door did not change. A docs pass that reads only the ADR's original body and stops there will describe a seam that no longer exists in the running service — the addendum, and the code it describes, is what is accurate today.
+
+## A failed check is a 402, not a hidden error
+
+`store.activate_listing` raises `BillingNotActive` when `has_active_subscription` returns false, and `main.py` surfaces that as `402 Payment Required`, never a `500` and never a silent no-op. The listing's `status` stays exactly where it was — usually `draft` — and nothing about the failed call touches `subscription_ref` or any other field on the row. A caller can retry activation as many times as it wants once the org's subscription is actually active; there is no lockout or backoff tied to a prior failed attempt.
+
+## What this means for your integration
+
+If your integration activates listings on an org's behalf, it needs a real `subscription_ref` that billing-payments-api already recognizes as active for that workspace before it calls this door — there is no seed step, admin override, or bypass on `marketplace-api`'s side. A `402` here is informative, not a bug to route around: it means the check ran correctly and found no active subscription, and the fix is on the billing side, not the request you sent.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Create and activate a listing" icon="upload" href="/marketplace/developers/create-and-activate-a-listing">
+    The activation call this seam sits behind, as a standalone how-to.
+  </Card>
+  <Card title="billing-payments-api" icon="book-open" href="/services/billing-payments-api/index">
+    The service on the other end of this seam.
+  </Card>
+</Columns>

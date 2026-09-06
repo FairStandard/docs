@@ -1,0 +1,44 @@
+---
+title: 'Marketplace overview'
+description: "What marketplace-api exposes: org-scoped listings gated on a real billing check, a public directory with no tenant, and a consultation queue with fake handoffs."
+kind: 'overview'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Overview'
+---
+
+The Marketplace section maps to two capabilities in the platform's canon register, `cap.marketplace` and `cap.consultations`, and one service backs both: `marketplace-api`. This page walks through what its HTTP surface actually does — org-scoped listing and profile management gated on a real billing check, a public <span className="kw">directory</span> that carries no tenant at all, and a consultation-request queue whose accept path is real even though the seams it hands off to are not — so you know which door to call before reading the register's own use cases into more than the build supports.
+
+## How it works
+
+A `Listing` starts as a `draft` under one org's workspace: `POST /internal/listings` takes `X-Workspace-Id` plus `org_id` and `provider_ref` in the body. Every listing, profile, and queue door is scoped by both `workspace_id` and `org_id` together — a row belonging to another org is invisible to the query that would have found it, not just unauthorized. `PUT /internal/listings/{listing_id}/profile` attaches the social profile: display name, headline, biography, and three registry-backed vocabulary lists — specialties, jurisdictions, service kinds — seeded from `registry_seed.json`. Extending any of the three is an insert, never a code change.
+
+Making a listing visible takes one more step, activation, and it is gated on a real subscription check today, not a stub. `POST /internal/listings/{listing_id}/activate` calls `HttpBillingReader.has_active_subscription`, which speaks billing-payments-api's `GET /subscriptions/lookup/active` door through servicekit's doorway contract, with retries on top. A subscription that is not active gets the activation refused as `402 Payment Required`. An earlier read of this service's ADR 0003 called this seam Fake-only; that ADR's own addendum replaced it with `HttpBillingReader` once billing-payments-api shipped the door, and the running code, not the ADR's original body, is what this page describes. See [billing-payments-api's overview](/services/billing-payments-api/index).
+
+`GET /public/listings` takes no `X-Workspace-Id` header at all — a stranger with no case, no account, and no workspace can browse it. It filters `Listing`/`Profile` rows in this service's own Postgres by exact match on specialty, jurisdiction, and service kind; there is no ranking and no full-text search over biography prose. `search-api` is named as the eventual owner of that gap (ADR 0001), and every listing write already publishes a best-effort `IndexFact` to search-api's index stream (ADR 0004), so the plumbing exists before the query side does. See [search-api's overview](/services/search-api/index).
+
+`POST /public/listings/{listing_id}/requests` is the other tenant-free door — no workspace header, and the `workspace_id` on the stored row comes from the listing being requested, never from the caller. From there, `GET /internal/listings/{listing_id}/requests` lists the queue, and `POST /internal/requests/{request_id}/accept` or `.../decline` decide it. Accepting always persists a `ConsultationHandoff` row, the durable fact that a match happened, and always calls three seams toward identity-api, case-api, and messaging-api. All three are `Fake` today: the request is genuinely accepted and the record is genuinely written, but nothing yet opens a message thread, links an account, or creates a case on the other end.
+
+## What you can do here
+
+- **Create, read, and deactivate a listing.** `POST /internal/listings`, `GET /internal/listings/{listing_id}`, `POST /internal/listings/{listing_id}/deactivate`.
+- **Activate a listing against a real subscription.** `POST /internal/listings/{listing_id}/activate`, `402` if the check fails.
+- **Manage a listing's profile.** `PUT /internal/listings/{listing_id}/profile`.
+- **Browse the public directory.** `GET /public/listings`, filtered by specialty, jurisdiction, and service kind.
+- **Send a consultation request.** `POST /public/listings/{listing_id}/requests`, no workspace header.
+- **Work the consultation queue.** `GET /internal/listings/{listing_id}/requests`, `POST /internal/requests/{request_id}/accept`, `POST /internal/requests/{request_id}/decline`.
+
+## Availability
+
+`cap.marketplace` carries `marketplace:read` and `marketplace:manage-listing`; `cap.consultations` carries `consultation:read`, `consultation:book`, and `consultation:respond`. Both sit at Basic tier, with no per-case entitlement to check before calling any door above. The register's `implementation` field for both still reads `unbuilt`; the service running in this build contradicts that, and this page reflects the service, not the register field.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with the Marketplace" icon="rocket" href="/marketplace/developers/get-started">
+    Create a listing, activate it, and send and accept a consultation request.
+  </Card>
+  <Card title="How listing activation checks a real subscription" icon="link" href="/marketplace/developers/how-listing-activation-checks-a-real-subscription">
+    The billing seam behind the 402, and what changed since ADR 0003 shipped its addendum.
+  </Card>
+</Columns>

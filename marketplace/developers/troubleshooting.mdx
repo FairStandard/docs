@@ -1,0 +1,52 @@
+---
+title: 'Troubleshoot the Marketplace'
+description: 'Fixes for the errors integrations hit most often against marketplace-api for this section.'
+kind: 'troubleshooting'
+audience: 'developers'
+section: 'marketplace'
+sidebarTitle: 'Troubleshooting'
+---
+
+Most <span className="kw">problems</span> integrating with this section come down to a missing or mismatched `X-Workspace-Id` or `org_id` on an org-scoped door, an activation that never had a real subscription behind it, or a downstream effect you expected accept to trigger on its own. The list below covers what comes up most.
+
+<AccordionGroup>
+  <Accordion title="Activating a listing returns 402">
+    That means billing-payments-api's `GET /subscriptions/lookup/active` came back false for the `subscription_ref` and workspace you sent. Confirm the org actually has an active Marketplace subscription on file before retrying — there is no bypass, seed step, or admin override on `marketplace-api`'s side, and the check runs against billing-payments-api for real.
+  </Accordion>
+  <Accordion title="A listing, profile, or queue call returns 404 even though I created the row">
+    Check `X-Workspace-Id` and the `org_id` in your request body against the ones used when the row was created. Every org-scoped door filters by both together, and a row that belongs to another workspace or org does not error differently than a row that never existed — both come back `404`.
+  </Accordion>
+  <Accordion title="The public directory doesn't show a listing I just activated">
+    Confirm the listing's `status` is actually `active` and that your filters match what its profile published — `specialty`, `jurisdiction`, and `service_kind` are exact-match, not substring search. `GET /public/listings` never returns a `draft` or `inactive` listing no matter how the filters are set.
+  </Accordion>
+  <Accordion title="Sending a consultation request returns 404">
+    The listing you targeted is not `active`. `POST /public/listings/{listing_id}/requests` checks the listing's status before creating the row, and a listing that is still a draft, or was deactivated, gives the same `404` a nonexistent listing ID would.
+  </Accordion>
+  <Accordion title="Accepting a request didn't open a message thread or create a case">
+    That's accurate for this service today, not a bug. `accept_request` persists a `ConsultationHandoff` row and calls `Fake` seams toward identity-api, case-api, and messaging-api — none of the three has built the receiving door these calls target, so no account link, case, or message thread is created automatically. See this section's use case on reacting to an acceptance yourself.
+  </Accordion>
+  <Accordion title="I need to know when a request gets accepted, but there's no webhook">
+    There isn't one. Poll `GET /internal/listings/{listing_id}/requests` and watch each row's `status` and `decided_at` — that queue list is the only surface an acceptance shows up on.
+  </Accordion>
+  <Accordion title="Discovery only ever returns exact matches, never a near match">
+    That's the current scope, not a defect. `GET /public/listings` filters this service's own Postgres by exact match; ranked relevance and typo-tolerant search are explicitly out of scope for `marketplace-api` and named as search-api's future job in ADR 0001.
+  </Accordion>
+  <Accordion title="A listing I just wrote doesn't show up on a search-api query">
+    Index publishing is best-effort and silent on failure by design (ADR 0004) — a dropped publish is logged, never retried, and never blocks the listing write that triggered it. Confirm the write itself succeeded on `marketplace-api`'s own doors first; if it did, the index copy can lag or be missing without that being an error on this service's side.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, check `marketplace-api`'s own `docs/adr/` for a decision that names the behavior deliberately before assuming it's a defect, then contact support@fairstandard.com with the workspace ID, listing ID, and the exact request you sent.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Marketplace overview" icon="book-open" href="/marketplace/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="How listing activation checks a real subscription" icon="link" href="/marketplace/developers/how-listing-activation-checks-a-real-subscription">
+    The billing seam behind several of the errors above.
+  </Card>
+</Columns>
