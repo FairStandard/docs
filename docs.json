@@ -203,9 +203,18 @@
           {
             "group": "Marketplace",
             "pages": [
-              "marketplace/overview",
-              "marketplace/finding-an-attorney",
-              "marketplace/legal-service-providers"
+              {
+                "group": "Litigants",
+                "pages": [
+                  "marketplace/litigants/overview",
+                  "marketplace/litigants/get-started",
+                  "marketplace/litigants/find-an-attorney-or-provider",
+                  "marketplace/litigants/request-a-consultation",
+                  "marketplace/litigants/how-consultation-requests-work",
+                  "marketplace/litigants/youve-decided-you-want-an-attorney",
+                  "marketplace/litigants/troubleshooting"
+                ]
+              }
             ]
           }
         ]
@@ -825,6 +834,18 @@
     {
       "source": "/learning-center/court-procedure",
       "destination": "/learning-center/litigants/browse-modules-about-your-cases-process"
+    },
+    {
+      "source": "/marketplace/overview",
+      "destination": "/marketplace/litigants/overview"
+    },
+    {
+      "source": "/marketplace/finding-an-attorney",
+      "destination": "/marketplace/litigants/find-an-attorney-or-provider"
+    },
+    {
+      "source": "/marketplace/legal-service-providers",
+      "destination": "/marketplace/litigants/find-an-attorney-or-provider"
     }
   ]
 }
