@@ -136,16 +136,27 @@
             ]
           },
           {
+            "group": "Messages",
+            "pages": [
+              {
+                "group": "Litigants",
+                "pages": [
+                  "messages/litigants/overview",
+                  "messages/litigants/get-started",
+                  "messages/litigants/send-a-message-about-your-case",
+                  "messages/litigants/set-your-notification-preferences",
+                  "messages/litigants/how-cooperation-and-violations-are-tracked",
+                  "messages/litigants/you-havent-heard-back-in-days",
+                  "messages/litigants/troubleshooting"
+                ]
+              }
+            ]
+          },
+          {
             "group": "Core concepts",
             "pages": [
               "concepts/law-assembly-engine",
               "concepts/roles"
-            ]
-          },
-          {
-            "group": "Case management",
-            "pages": [
-              "case-management/messaging"
             ]
           },
           {
@@ -741,6 +752,10 @@
     {
       "source": "/case-management/deadlines-and-next-steps",
       "destination": "/deadlines-and-next-steps/litigants/overview"
+    },
+    {
+      "source": "/case-management/messaging",
+      "destination": "/messages/litigants/overview"
     }
   ]
 }
