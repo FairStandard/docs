@@ -174,9 +174,18 @@
           {
             "group": "Learning center",
             "pages": [
-              "learning-center/overview",
-              "learning-center/understanding-family-law",
-              "learning-center/court-procedure"
+              {
+                "group": "Litigants",
+                "pages": [
+                  "learning-center/litigants/overview",
+                  "learning-center/litigants/get-started",
+                  "learning-center/litigants/browse-modules-about-your-cases-process",
+                  "learning-center/litigants/work-through-an-assigned-module",
+                  "learning-center/litigants/how-modules-and-progress-work",
+                  "learning-center/litigants/a-module-was-suggested-for-your-case",
+                  "learning-center/litigants/troubleshooting"
+                ]
+              }
             ]
           },
           {
@@ -780,6 +789,18 @@
     {
       "source": "/case-management/messaging",
       "destination": "/messages/litigants/overview"
+    },
+    {
+      "source": "/learning-center/overview",
+      "destination": "/learning-center/litigants/overview"
+    },
+    {
+      "source": "/learning-center/understanding-family-law",
+      "destination": "/learning-center/litigants/overview"
+    },
+    {
+      "source": "/learning-center/court-procedure",
+      "destination": "/learning-center/litigants/browse-modules-about-your-cases-process"
     }
   ]
 }
