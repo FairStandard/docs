@@ -1,0 +1,46 @@
+---
+title: 'Deadlines and next steps overview'
+description: "What backs Calendar and Next Steps today: deadlines-api's rule engine and filings-api's workflow, and which of the five capabilities have no service yet."
+kind: 'overview'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'Overview'
+---
+
+The deadlines and next steps section covers five <span className="kw">capabilities</span> in the platform's canon register: calendar, deadlines, next steps, court prep, and filing. This page maps each one to what actually exists in this build today, so you know which door to call and which one you'd have to build yourself.
+
+## How it works
+
+`deadlines-api` is the one real engine behind this section. It does not store a deadline you hand it — it computes one from two seams: a `DeadlineRule` read from `state-law-api` (a trigger, an offset, and a calendar of business days for one jurisdiction and practice area) and a `CaseEvent` read from `case-api`'s docket. `POST /internal/cases/{case_id}/deadlines/propose` runs that engine against a case's current docket and persists whatever it produces, idempotently — proposing twice against an unchanged docket does not duplicate rows. A proposed deadline is then accepted or dismissed by a human through `PATCH /internal/deadlines/{deadline_id}/accept` or `.../dismiss`. Urgency (`overdue`, `due_soon`, `on_track`, `closed`) is never stored; it is computed at read time from `due_at` against the clock, so it is never stale. See [deadlines-api's overview](/services/deadlines-api/index) and [domain model](/services/deadlines-api/domain-model).
+
+`filings-api` backs the filing capability: a `Filing` moves through a lifecycle status and a guided drafting pass, and its actual content is a draft rendered by `document-creation-api` through a seam — filings-api stores only the draft's id, never rendered bytes. `GET /internal/cases/{case_id}/filings/recommendations` reads the case's practice-area pack to suggest what to file next; nothing here is cached, so a new docket entry changes what's recommended on the very next call. See [filings-api's overview](/services/filings-api/index), [domain model](/services/filings-api/domain-model), and [document-creation-api's overview](/services/document-creation-api/index).
+
+Calendar is not a service of its own. There is no `calendar-api` in this build — a calendar view is `case-api`'s docket (hearings, filings, and their results) merged with `deadlines-api`'s accepted and proposed deadlines, interleaved by date on your side, the same pattern the your case section's combined timeline uses for `case-api` and `evidence-api`.
+
+Next steps and court prep have no backing door at all. No service in this build ranks a deadline, a filing, and a court-prep task into one ordered queue — filings-api's own `README.md` rules court prep tasks out of scope for this wave and tracks the remaining build-out on a separate issue. If your integration needs either one, there is nothing to call yet; build the ranking and the task list yourself from the deadlines and filings doors that do exist.
+
+Reminders are a related gap worth naming here: `notifications-api` is the platform's one delivery layer, and its own documentation uses `deadline.approaching` only as an illustrative kind string — no door in `deadlines-api` publishes that event today, and no door lets a caller schedule a reminder some number of days before a deadline. See [notifications-api's overview](/services/notifications-api/index) before you assume that wiring exists.
+
+## What you can do here
+
+- **Propose deadlines for a case.** Run the rule engine against a case's docket and a jurisdiction's published rule set with `POST /internal/cases/{case_id}/deadlines/propose`.
+- **Accept or dismiss a proposed deadline.** `PATCH /internal/deadlines/{deadline_id}/accept` or `.../dismiss`.
+- **List deadlines by case or by workspace**, each with urgency computed at read time.
+- **Create a filing and read what to file next.** `POST /internal/cases/{case_id}/filings` and `GET .../filings/recommendations`.
+- **Hand a filing's blocks to document-creation-api and render it.** `POST /internal/filings/{filing_id}/draft`, then `document-creation-api`'s own render door.
+- **Record service of a filing.** `POST /internal/filings/{filing_id}/service`.
+
+## Availability
+
+All five capabilities in this section carry a Basic tier requirement in the canon register and no per-case entitlement gate — there is no `entitlements-api` check to make before you call any door named above. The gap is in what exists to call, not in what is gated: next steps, court prep, and a scheduled deadline reminder have no service door in this build.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with deadlines and next steps" icon="rocket" href="/deadlines-and-next-steps/developers/get-started">
+    Propose deadlines for a case, then create and draft a filing.
+  </Card>
+  <Card title="How a deadline is computed from law and case events" icon="calculator" href="/deadlines-and-next-steps/developers/how-a-deadline-is-computed-from-law-and-case-events">
+    The rule engine's inputs, why nothing is stored until it runs, and where a filing's obligations fit in.
+  </Card>
+</Columns>

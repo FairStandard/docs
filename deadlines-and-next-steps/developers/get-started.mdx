@@ -1,0 +1,106 @@
+---
+title: 'Get started with deadlines and next steps'
+description: 'Propose deadlines against a published rule set, accept one, then create a filing and hand its draft to document-creation-api.'
+kind: 'get-started'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'Get started'
+---
+
+This guide takes you through the <span className="kw">calls</span> an integration in this section makes most: proposing deadlines for a case, accepting one, and creating a filing whose draft you hand off for rendering.
+
+## What you'll learn
+
+- How to propose deadlines for a case against a jurisdiction's published rule set
+- How to accept a proposed deadline and list deadlines with their computed urgency
+- How to create a filing, read what to file next, and hand its draft to `document-creation-api`
+- What has no door to call yet in this section
+
+## Before you begin
+
+You need a workspace ID, a bearer token good for that workspace, and a case that already exists on `case-api`. Every call below is workspace-scoped: `deadlines-api`, `filings-api`, and `document-creation-api` all take `X-Workspace-Id` on every internal request, and a row from another workspace never surfaces — not even as a 403. It comes back as if it does not exist. Proposing deadlines also needs a jurisdiction and practice area that `state-law-api` already has a published deadline rule set for; proposing against one it does not have simply proposes nothing, honestly, rather than erroring.
+
+### Step 1: Propose deadlines for the case
+
+```bash
+curl -X POST https://deadlines-api.internal.fairstandard.com/internal/cases/$CASE_ID/deadlines/propose \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"jurisdiction": "TX", "practice_area": "family-law"}'
+```
+
+This reads the case's docket from `case-api`, reads the current rule set for `(TX, family-law)` from `state-law-api`, and runs the deterministic engine against both. Proposing again with an unchanged docket does not create duplicate rows.
+
+### Step 2: List the case's deadlines
+
+```bash
+curl "https://deadlines-api.internal.fairstandard.com/internal/cases/$CASE_ID/deadlines" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+Each deadline carries its title, its due timestamp, its status (`proposed`, `accepted`, `dismissed`, or `done`), and an urgency computed at read time — never stored, so it never goes stale between calls.
+
+### Step 3: Accept a deadline
+
+```bash
+curl -X PATCH https://deadlines-api.internal.fairstandard.com/internal/deadlines/$DEADLINE_ID/accept \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+Dismiss the same way against `.../dismiss` instead. Neither call takes a body — the deadline id and the workspace header are the whole request.
+
+### Step 4: Create a filing and read what to file next
+
+```bash
+curl -X POST https://filings-api.internal.fairstandard.com/internal/cases/$CASE_ID/filings \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"practice_area": "family-law", "title": "Motion to Compel", "filing_type": "motion-to-compel"}'
+```
+
+```bash
+curl "https://filings-api.internal.fairstandard.com/internal/cases/$CASE_ID/filings/recommendations?practice_area=family-law" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+The recommendation call is never cached — it reads the case's current docket and existing filings on every request, so a new docket entry changes what it suggests on the very next call.
+
+### Step 5: Hand the filing's draft to document-creation-api
+
+```bash
+curl -X POST https://document-creation-api.internal.fairstandard.com/internal/drafts \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Motion to Compel", "case_id": '"$CASE_ID"'}'
+```
+
+```bash
+curl -X POST https://filings-api.internal.fairstandard.com/internal/filings/$FILING_ID/draft \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"blocks": []}'
+```
+
+`filings-api` stores only the draft's id on the filing — never rendered bytes. Rendering is `document-creation-api`'s own `POST /internal/drafts/{draft_id}/render` door, called once the draft's blocks are filled in.
+
+## Tips
+
+- No door in this build ranks a deadline, a filing, and a court-prep task into one ordered queue. If your integration needs a next-steps list, build the ordering yourself from the deadlines and filings doors above.
+- Setting a filing's status to `filed` makes `filings-api` announce obligation facts (`{kind, due_basis}`) on the response — descriptive content, not a computed date. No call from `filings-api` to `deadlines-api` exists in this build; turning `due_basis` into an actual due date is a call your integration makes yourself.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Deadlines and next steps overview" icon="package" href="/deadlines-and-next-steps/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="Draft and file a court filing" icon="file-text" href="/deadlines-and-next-steps/developers/draft-and-file-a-court-filing">
+    The same filing workflow as a standalone how-to, through service.
+  </Card>
+  <Card title="How a deadline is computed from law and case events" icon="calculator" href="/deadlines-and-next-steps/developers/how-a-deadline-is-computed-from-law-and-case-events">
+    The rule engine's inputs and why nothing is stored until it runs.
+  </Card>
+  <Card title="Troubleshoot deadlines and next steps" icon="life-buoy" href="/deadlines-and-next-steps/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

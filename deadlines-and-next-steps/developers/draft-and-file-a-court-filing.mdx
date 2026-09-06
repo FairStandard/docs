@@ -1,0 +1,98 @@
+---
+title: 'Draft and file a court filing'
+description: "Create a filing on filings-api, hand its draft to document-creation-api, move it through status, and record service."
+kind: 'how-to'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'Draft and file'
+---
+
+A `Filing` in `filings-api` carries its own lifecycle status and guided-pass state, but the document itself is <span className="kw">rendered</span> by `document-creation-api` through a seam — filings-api never holds rendered bytes, only a pointer to the draft. This walks through the full path from creating a filing to recording that it was served.
+
+## Before you begin
+
+You need a case ID, a workspace ID with write access, and the case's practice area. `filing_type`, `practice_area`, and `status` are all plain strings on this service, not enums — use the value the recommendation door or your own workflow assigns rather than inventing one.
+
+1. Read what to file next.
+
+   ```bash
+   curl "https://filings-api.internal.fairstandard.com/internal/cases/$CASE_ID/filings/recommendations?practice_area=family-law" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   This is never cached. It reads the case's docket, its existing filings, and the practice area's current pack on every call, so a docket entry logged a moment ago can already change what's recommended.
+
+2. Create the filing.
+
+   ```bash
+   curl -X POST https://filings-api.internal.fairstandard.com/internal/cases/$CASE_ID/filings \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"practice_area": "family-law", "title": "Motion to Compel", "filing_type": "motion-to-compel"}'
+   ```
+
+   A successful response returns the created `Filing`, including its `id` — every later call in this walkthrough is scoped to it.
+
+3. Start a draft on document-creation-api and hand its id to the filing.
+
+   ```bash
+   curl -X POST https://document-creation-api.internal.fairstandard.com/internal/drafts \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"title": "Motion to Compel", "case_id": '"$CASE_ID"'}'
+   ```
+
+   ```bash
+   curl -X POST https://filings-api.internal.fairstandard.com/internal/filings/$FILING_ID/draft \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"blocks": []}'
+   ```
+
+   `filings-api` calls `document-creation-api`'s real `POST /internal/drafts` door through its own `DocumentCreationReader` seam — never `/internal/templates`, since a filing's templates live inside filings-api's own guided pass, not document-creation-api. Only the draft id is stored on the filing; the blocks themselves live in document-creation-api.
+
+4. Move the filing through its guided pass as blocks are completed.
+
+   ```bash
+   curl -X PATCH https://filings-api.internal.fairstandard.com/internal/filings/$FILING_ID/guided-pass \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"current_pass": "review", "pass_blocks": [{"block_id": "caption", "complete": true}]}'
+   ```
+
+   The pass definitions and prompt content that drive a pass forward are not returned by this door — they are trade-secret content that lives server-side and is never echoed to a client-facing response.
+
+5. Set the filing's status to `filed`.
+
+   ```bash
+   curl -X PATCH https://filings-api.internal.fairstandard.com/internal/filings/$FILING_ID/status \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"status": "filed"}'
+   ```
+
+   This response includes the obligation facts the filing announces — a list of `{kind, due_basis}` pairs read from the practice area's current pack. `due_basis` is descriptive content, such as `"20_calendar_days_after_filed"`, never a computed date.
+
+6. Record service of the filing.
+
+   ```bash
+   curl -X POST https://filings-api.internal.fairstandard.com/internal/filings/$FILING_ID/service \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"served_on": "Jordan Smith", "method": "personal", "served_at": "2026-09-10T09:00:00Z"}'
+   ```
+
+## What happens next
+
+No call from `filings-api` to `deadlines-api` exists in this build. The obligation facts a filed document announces are returned in the status-update response and persisted on the row, readable later from `GET /internal/filings/{filing_id}` — but nothing turns `due_basis` into an actual due date on `deadlines-api` for you. If your integration needs the two connected, read the obligation facts and call `deadlines-api` yourself.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Propose and track deadlines for a case" icon="calendar" href="/deadlines-and-next-steps/developers/propose-and-track-deadlines-for-a-case">
+    Where a filing's obligation facts would need to go to become a tracked deadline.
+  </Card>
+  <Card title="Your app needs one calendar for a case" icon="layout-grid" href="/deadlines-and-next-steps/developers/your-app-needs-one-calendar-for-a-case">
+    Merge this filing's docket entries with deadlines-api's deadlines into one view.
+  </Card>
+</Columns>

@@ -1,0 +1,37 @@
+---
+title: 'How a deadline is computed from law and case events'
+description: "The rule engine's two inputs, why nothing is stored until it runs, and why a filing's obligations don't become a deadline on their own."
+kind: 'concept'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'How deadlines are computed'
+---
+
+A `Deadline` on `deadlines-api` is never entered by a person and never invented by the service itself. It is the deterministic <span className="kw">output</span> of a rule engine reading two things: content describing what the law requires, and facts about what actually happened on the case.
+
+## The engine reads content, not code
+
+`engine.py`'s `evaluate(rule_set, events, now)` takes a `RuleSet` — a `DeadlineRule` for every trigger, offset, and condition the jurisdiction's practice area defines, plus a `Calendar` naming which weekdays and dates count as business days — and a list of normalized `CaseEvent`s. It reads no clock of its own beyond the `now` you pass in, and it produces the same proposals for the same inputs every time. None of that rule content is hardcoded in `deadlines-api`; it is read from `state-law-api` through a `StateLawReader` seam, the same seam pattern `case-api`'s `PacksReader` uses for practice-area configuration. A jurisdiction and practice area `state-law-api` has never published a rule set for is not an error condition — the engine evaluates against an honest empty rule set and proposes nothing.
+
+## Case events are case-api's docket, normalized
+
+The engine's other input, a `CaseEvent`, is not `case-api`'s raw docket-entry shape. `deadlines-api`'s `CaseReader` seam reads `case-api`'s docket through `GET /internal/cases/{case_id}/docket`, paging through every entry, and normalizes each one — a docket entry's `kind` becomes the event's `kind`; `occurred_at` and `result` pass through unchanged. That normalization step exists so the engine's contract does not depend on `case-api`'s own internal shape ever staying identical; a change on one side does not silently break the other.
+
+## Nothing is stored until propose runs, and status and urgency are separate axes
+
+`evaluate()`'s output is a `Proposal`, not a database row — it becomes a `Deadline` only when `propose_for_case` persists it, idempotently, so calling propose again against an unchanged docket does not duplicate rows. Once persisted, a deadline carries two facts that are easy to conflate but track different things: `status` (`proposed`, `accepted`, `dismissed`, or `done`) is the deadline's own lifecycle, set by a human action; urgency (`overdue`, `due_soon`, `on_track`, or `closed`) is computed at read time from the due date against the clock and is never stored, because a stored urgency goes stale the moment time passes. A deadline can be `accepted` and `overdue` at once — accepting it settled nothing about how pressing it now is.
+
+## A filing's obligations are a fact, not a deadline
+
+`filings-api` announces obligation facts — `{kind, due_basis}` — when a filing's status becomes `filed`, read from the practice area's pack the same way `deadlines-api` reads its own rule content. `due_basis` is descriptive (`"20_calendar_days_after_filed"`), not a computed date: `filings-api` does not do date arithmetic, on the reasoning that duplicating it there risks the two services disagreeing about the same date. No call from `filings-api` to `deadlines-api` exists in this build to close that loop automatically — an integration that wants a filing's obligation to become a tracked, computed deadline reads the obligation facts from the filing and proposes the deadline itself.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Propose and track deadlines for a case" icon="calendar" href="/deadlines-and-next-steps/developers/propose-and-track-deadlines-for-a-case">
+    Call the engine, then accept, dismiss, and list what it proposed.
+  </Card>
+  <Card title="Deadlines and next steps overview" icon="package" href="/deadlines-and-next-steps/developers/overview">
+    What backs every capability in this section today.
+  </Card>
+</Columns>

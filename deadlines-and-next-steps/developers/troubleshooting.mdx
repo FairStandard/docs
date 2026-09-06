@@ -1,0 +1,46 @@
+---
+title: 'Troubleshoot deadlines and next steps'
+description: 'Fixes for the errors integrations hit most often against deadlines-api, filings-api, and document-creation-api for this section.'
+kind: 'troubleshooting'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'Troubleshooting'
+---
+
+Most <span className="kw">problems</span> integrating with this section come down to a missing `X-Workspace-Id` header, a rule set that has never been published for a case's jurisdiction and practice area, or asking for a door — next steps, court prep, a scheduled reminder — that has not been built yet. The list below covers what comes up most.
+
+<AccordionGroup>
+  <Accordion title="Proposing deadlines returns an empty list, not an error">
+    That's honest, not broken. `state-law-api` has no published deadline rule set for the `(jurisdiction, practice_area)` pair you sent, so `deadlines-api`'s `StateLawReader` maps the `404` to an empty rule set and the engine evaluates it correctly to nothing. Confirm the rule set has been published for that exact pair on `state-law-api` before assuming the case is missing deadlines it should have.
+  </Accordion>
+  <Accordion title="A deadline, filing, or draft from another workspace returns 404 instead of 403">
+    This is deliberate, not a bug. Every query on `deadlines-api`, `filings-api`, and `document-creation-api` filters by `workspace_id` before anything else — a row from another workspace does not surface as a permission error, because as far as the query is concerned, it does not exist. Confirm you're sending the `X-Workspace-Id` header that matches the workspace the resource was created under.
+  </Accordion>
+  <Accordion title="Accepting or dismissing a deadline doesn't change what your calendar shows as urgent">
+    Status and urgency are separate axes on purpose. Accepting a deadline moves its `status`; urgency is computed at read time from the due date against the clock regardless of status, so an accepted deadline can still read as `overdue`. Don't infer urgency from status — read it from the same response.
+  </Accordion>
+  <Accordion title="Creating a filing, or publishing an obligation rule, returns a 422 on practice_area">
+    `filings-api` reads a filing's practice-area pack from `packs-api` to compute its recommendations and obligations. A practice area with no registered pack, or a `filing_type` that pack has no matching obligation rule for, does not error at creation — it files with an empty `obligations` list on status update. A 422 specifically means the practice area string itself is unregistered; register it on `packs-api` before publishing content or filing against it.
+  </Accordion>
+  <Accordion title="A filing's obligations never turn into a deadline on deadlines-api">
+    That's accurate, not a documentation gap. `filings-api` announces obligation facts (`{kind, due_basis}`) when a filing is marked `filed`, but no call from `filings-api` to `deadlines-api` exists in this build to turn `due_basis` into an actual due date. Read the obligation facts from the filing and call `deadlines-api`'s propose door yourself if your integration needs the two connected.
+  </Accordion>
+  <Accordion title="There's no endpoint for next steps, court prep, or a scheduled deadline reminder">
+    That's accurate, not a documentation gap. No service in this build ranks a deadline, a filing, and a court-prep task into one ordered queue, and `filings-api`'s own `README.md` rules court prep out of scope for this wave. `notifications-api` delivers events a producer already published; no door lets you schedule a reminder some number of days ahead of a deadline, and `deadlines-api` does not publish to `notifications-api` in this build. See this section's overview for exactly what exists today.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, check the relevant service's own `docs/adr/` for a decision that names the behavior deliberately before assuming it's a defect, then contact support@fairstandard.com with the workspace ID, case ID, and the exact request you sent.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Deadlines and next steps overview" icon="package" href="/deadlines-and-next-steps/developers/overview">
+    What backs this section today and what has no service yet.
+  </Card>
+  <Card title="How a deadline is computed from law and case events" icon="calculator" href="/deadlines-and-next-steps/developers/how-a-deadline-is-computed-from-law-and-case-events">
+    The engine's inputs and why status and urgency are separate axes.
+  </Card>
+</Columns>

@@ -214,6 +214,18 @@
             ]
           },
           {
+            "group": "Deadlines and next steps for developers",
+            "pages": [
+              "deadlines-and-next-steps/developers/overview",
+              "deadlines-and-next-steps/developers/get-started",
+              "deadlines-and-next-steps/developers/propose-and-track-deadlines-for-a-case",
+              "deadlines-and-next-steps/developers/draft-and-file-a-court-filing",
+              "deadlines-and-next-steps/developers/how-a-deadline-is-computed-from-law-and-case-events",
+              "deadlines-and-next-steps/developers/your-app-needs-one-calendar-for-a-case",
+              "deadlines-and-next-steps/developers/troubleshooting"
+            ]
+          },
+          {
             "group": "billing-payments-api",
             "pages": [
               "services/billing-payments-api/index",

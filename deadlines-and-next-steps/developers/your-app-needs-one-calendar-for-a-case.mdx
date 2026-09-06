@@ -1,0 +1,47 @@
+---
+title: 'Your app needs one calendar for a case'
+description: "No service publishes a merged calendar. Build one from case-api's docket and deadlines-api's deadlines, interleaved by date."
+kind: 'use-case'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'One calendar for a case'
+---
+
+The Calendar screen shows a litigant or attorney every hearing, filing deadline, and response window on a case in one place. No repo in this build publishes that as a single <span className="kw">endpoint</span> — you assemble it from two services, the same way the your case section's combined timeline is assembled from two.
+
+## What to do
+
+Read `case-api`'s docket for the case — it carries the court's own hearings, filings, and their results:
+
+```bash
+curl "https://case-api.internal.fairstandard.com/internal/cases/$CASE_ID/docket?limit=100&offset=0" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+Read `deadlines-api`'s deadlines for the same case — the dated obligations the rule engine computed and a human accepted or is still deciding on:
+
+```bash
+curl "https://deadlines-api.internal.fairstandard.com/internal/cases/$CASE_ID/deadlines" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+Sort both result sets together by date on your side — a docket entry's `occurred_at` for something that already happened, a deadline's `due_at` for something still ahead. Keep the two kinds of row distinguishable in your merged view: a docket entry carries the court's own `kind` and `result`, while a deadline carries a status (`proposed`, `accepted`, `dismissed`, `done`) and an urgency computed at read time that a docket entry does not have. Do not flatten them into one shape that drops that distinction — a litigant-facing calendar needs to say plainly which rows are settled fact and which are still awaiting a decision.
+
+Page through both sources fully before you sort. Both list doors return paged results, and a calendar assembled from a partial first page of either one will look complete right up until it doesn't.
+
+## What Vero does for you
+
+`case-api` and `deadlines-api` each guarantee a stable sort within their own paged results, so a page you've already read and merged does not need to be re-fetched later — only rows created since your last read do. Both services scope every row to `workspace_id`, so a merged calendar built from two workspace-scoped reads never surfaces a row from another workspace, even if your merge logic tried to combine data across two cases by mistake.
+
+Neither door tells you what changed since your last read. If a court date moves — a continuance, an amended order — re-running `propose` on `deadlines-api` is how a dependent deadline picks that change up; there is no push notification that tells your integration a re-propose is needed, so a calendar that needs to stay current polls both sources rather than waiting to be told.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Propose and track deadlines for a case" icon="calendar" href="/deadlines-and-next-steps/developers/propose-and-track-deadlines-for-a-case">
+    The deadlines half of this merge, including how a moved court date reaches its deadlines.
+  </Card>
+  <Card title="Deadlines and next steps overview" icon="package" href="/deadlines-and-next-steps/developers/overview">
+    What backs every capability in this section today.
+  </Card>
+</Columns>

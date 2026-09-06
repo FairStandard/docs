@@ -1,0 +1,76 @@
+---
+title: 'Propose and track deadlines for a case'
+description: "Run deadlines-api's rule engine against a case's docket, then accept, dismiss, and page its deadlines with their computed urgency."
+kind: 'how-to'
+audience: 'developers'
+section: 'deadlines-and-next-steps'
+sidebarTitle: 'Propose deadlines'
+---
+
+A `Deadline` in `deadlines-api` is never written by hand — it is <span className="kw">proposed</span> by a deterministic rule engine reading a case's docket and a jurisdiction's published rule set, then accepted or dismissed by a human. This walks through a full propose-to-track cycle, including what happens when the rule set hasn't been published yet.
+
+## Before you begin
+
+You need a case ID, a workspace ID scoped to that case, and to know the case's jurisdiction and practice area. Proposing against a `(jurisdiction, practice_area)` pair `state-law-api` has no published rule set for is not an error — it proposes nothing, and you get an empty result back rather than a failure.
+
+1. Propose deadlines from the case's current docket.
+
+   ```bash
+   curl -X POST https://deadlines-api.internal.fairstandard.com/internal/cases/$CASE_ID/deadlines/propose \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"jurisdiction": "TX", "practice_area": "family-law"}'
+   ```
+
+   The engine reads every docket entry for the case through `case-api`, reads the current rule set for `(TX, family-law)` from `state-law-api`, and evaluates both against the clock. The call is idempotent — proposing again against an unchanged docket does not create duplicate deadlines.
+
+2. List the deadlines the case now has.
+
+   ```bash
+   curl "https://deadlines-api.internal.fairstandard.com/internal/cases/$CASE_ID/deadlines" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   Each row carries a title, a due timestamp, a status, and honest provenance — which rule produced it and which docket entry triggered it. A deadline that is part of a chain (for example, a reminder five days before its parent is due) carries `chain_parent_id`.
+
+3. Accept the deadline a human has confirmed.
+
+   ```bash
+   curl -X PATCH https://deadlines-api.internal.fairstandard.com/internal/deadlines/$DEADLINE_ID/accept \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   Accepting moves the deadline's status from `proposed` to `accepted`. Nothing about urgency changes when you accept — urgency is a separate axis, computed from the due date against the clock regardless of status.
+
+4. Dismiss a proposed deadline that doesn't apply.
+
+   ```bash
+   curl -X PATCH https://deadlines-api.internal.fairstandard.com/internal/deadlines/$DEADLINE_ID/dismiss \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   A dismissed deadline stays in the store — it is not deleted — so the record of what the engine proposed and why a human rejected it is never lost.
+
+5. List every deadline across the workspace, not just one case.
+
+   ```bash
+   curl "https://deadlines-api.internal.fairstandard.com/internal/deadlines?limit=25&offset=0" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   This is the door a caseload-wide view reads from — every deadline in the workspace, across every case, each with the same computed urgency.
+
+## What happens next
+
+Nothing here triggers a notification. `deadlines-api` does not call `notifications-api`, and no door lets you schedule a reminder some number of days before a due date — if your integration needs one, publish your own `NotificationEvent` once you know the due date. Re-proposing after a docket entry changes (a continuance, an amended order) is the way a moved court date reaches its dependent deadlines; the engine re-evaluates from the current docket every time you call `propose`, so calling it again after a change is the correct way to pick that change up, not a workaround.
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="How a deadline is computed from law and case events" icon="calculator" href="/deadlines-and-next-steps/developers/how-a-deadline-is-computed-from-law-and-case-events">
+    Why nothing is stored until the engine runs, and what a chain parent is.
+  </Card>
+  <Card title="Draft and file a court filing" icon="file-text" href="/deadlines-and-next-steps/developers/draft-and-file-a-court-filing">
+    The obligation facts a filed document announces, and why they don't reach deadlines-api on their own.
+  </Card>
+</Columns>
