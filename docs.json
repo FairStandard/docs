@@ -185,6 +185,18 @@
                   "learning-center/litigants/a-module-was-suggested-for-your-case",
                   "learning-center/litigants/troubleshooting"
                 ]
+              },
+              {
+                "group": "Attorneys",
+                "pages": [
+                  "learning-center/attorneys/overview",
+                  "learning-center/attorneys/get-started",
+                  "learning-center/attorneys/assign-a-module-to-a-client",
+                  "learning-center/attorneys/check-a-clients-progress-on-an-assigned-module",
+                  "learning-center/attorneys/how-an-assignment-stays-pinned-to-a-version",
+                  "learning-center/attorneys/a-new-module-might-match-a-clients-case",
+                  "learning-center/attorneys/troubleshooting"
+                ]
               }
             ]
           },
