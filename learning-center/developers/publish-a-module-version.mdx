@@ -1,0 +1,84 @@
+---
+title: 'Publish a module version'
+description: 'Publish a new module version against a registered practice area, then read it back as current or by version number.'
+kind: 'how-to'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Publish a module'
+advice: true
+---
+
+Publishing is the only write door module content has on `learning-api` — there's no edit endpoint and no delete endpoint. This walks through the one call that <span className="kw">creates</span> a version and the two calls that read it back.
+
+## Before you begin
+
+You need a `practice_area_key` already registered on `packs-api`; publishing against a key it has never seen returns a `422`. Module content doors take no `X-Workspace-Id` and no `Authorization` header — anyone able to reach the service can publish, since content is shared across every workspace, not scoped to one.
+
+1. Publish the version.
+
+   ```bash
+   curl -X POST https://learning-api.internal.fairstandard.com/internal/modules/tx-custody-case-phases \
+     -H "Content-Type: application/json" \
+     -d '{
+       "practice_area_key": "family-law",
+       "kind": "state_process_guide",
+       "title": "How a Texas custody case moves through its phases",
+       "jurisdiction": "TX",
+       "addresses_finding_types": ["custody_schedule", "deadline_compliance"],
+       "lessons": [
+         {
+           "key": "intake",
+           "title": "Intake",
+           "body": "A Texas custody case begins with a petition.",
+           "statute_refs": [{"jurisdiction": "TX", "citation": "TRCP 99(b)"}]
+         }
+       ]
+     }'
+   ```
+
+   `module_key` is the path segment, not a body field. `jurisdiction` is optional — leave it out for content that isn't state-specific. `addresses_finding_types` defaults to an empty list if you don't set it, which means the module will never be suggested for any case until you do.
+
+2. Read the current version.
+
+   ```bash
+   curl https://learning-api.internal.fairstandard.com/internal/modules/tx-custody-case-phases/current
+   ```
+
+   This is the highest version published for the key. A lesson carrying `statute_refs` gains a resolved `statutes` array here, fetched live from `state-law-api` — an unpublished citation is simply absent from that array, not an error.
+
+3. Read one specific version.
+
+   ```bash
+   curl https://learning-api.internal.fairstandard.com/internal/modules/tx-custody-case-phases/1
+   ```
+
+   Version 1 stays exactly as published, forever, regardless of what gets published after it. Both this door and `current` return a `404` if the module or version doesn't exist.
+
+4. Publish a second version, if the content needs to change.
+
+   ```bash
+   curl -X POST https://learning-api.internal.fairstandard.com/internal/modules/tx-custody-case-phases \
+     -H "Content-Type: application/json" \
+     -d '{"practice_area_key": "family-law", "kind": "state_process_guide", "title": "How a Texas custody case moves through its phases, updated", "lessons": [{"key": "intake", "title": "Intake", "body": "Updated body."}]}'
+   ```
+
+   The store computes the next version number itself — there is no field to request a specific one, and two publishers racing for the same key both retry against the unique `(module_key, version)` constraint rather than forking the sequence.
+
+## What happens next
+
+Version 1 is untouched by publishing version 2. Any assignment already pinned to version 1 keeps reading version 1's lesson list forever; nothing about publishing a new version reaches into an existing assignment. If you want new assignments to use the new content, you assign the new version explicitly — assignment behavior is covered in this section's other how-to.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Assign a module and record progress" icon="send" href="/learning-center/developers/assign-a-module-and-record-progress">
+    Pin the version you just published to an assignee.
+  </Card>
+  <Card title="How an assignment pins a module version" icon="link" href="/learning-center/developers/how-an-assignment-pins-a-module-version">
+    Why publishing a new version never moves an existing assignment.
+  </Card>
+</Columns>

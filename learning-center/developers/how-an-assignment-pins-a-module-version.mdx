@@ -1,0 +1,42 @@
+---
+title: 'How an assignment pins a module version'
+description: 'Why Assignment.module_version is set once and never changes, and what that means for progress and for a republished module.'
+kind: 'concept'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Version pinning'
+advice: true
+---
+
+`Assignment.module_version` is written once, at creation, and never updated after. That single column is the entire mechanism behind a guarantee your integration can rely on: an assignment's lesson list never <span className="kw">shifts</span> underneath in-progress work, no matter what gets published to the same `module_key` later.
+
+## Publishing never reaches into an existing assignment
+
+A module version, once published, is immutable — there is no edit door and no delete door on `learning-api`. Publishing a new version for a `module_key` an assignment already pins does nothing to that assignment's row; `module_version` still points at the version it was created with, and `GET /internal/modules/{module_key}/{version}` still returns that exact snapshot forever. An integration that wants an assignee to see newer content has to create a new assignment against the new version — there's no "move this assignment forward" door, on purpose.
+
+## Progress is keyed against the pinned version's lesson list
+
+`Progress` rows are keyed by `(assignment_id, lesson_key)`, not by `(module_key, lesson_key)`. Nothing checks a recorded `lesson_key` against the pinned version's actual lessons at write time, so a key from a different version or a typo still creates a row — the safety this design buys you is that the pinned version's lesson list can't be renumbered or replaced out from under an assignment already tracking progress against it, not that every progress row is guaranteed to correspond to a real lesson. Two assignees on the same module version each get their own progress rows; nothing is shared between them.
+
+## Assigning a version that was never published fails at write time
+
+`POST /assignments` checks `module_key` and `module_version` against what's actually been published before it creates the row. A pin to a version that doesn't exist returns a `422` immediately, rather than succeeding and surfacing a `404` the first time something tries to read the module content behind it. This is the same doctrine `packs-api` applies to a pack version — a caller that needs stability pins a specific number, and the service that lets it pin also makes sure that number is real.
+
+## There is no floating "always current" assignment
+
+Nothing in this service's model expresses "assign whatever's current and follow it forward" — every assignment is a fixed pin from the moment it's created. If your integration wants that behavior, it has to build it itself: watch for new publishes and create new assignments deliberately, rather than expecting an existing one to track a `module_key`'s current version on its own.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Assign a module and record progress" icon="send" href="/learning-center/developers/assign-a-module-and-record-progress">
+    The calls this pinning behavior applies to.
+  </Card>
+  <Card title="Publish a module version" icon="upload" href="/learning-center/developers/publish-a-module-version">
+    Where a version number comes from before anything can pin it.
+  </Card>
+</Columns>

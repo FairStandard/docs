@@ -1,0 +1,57 @@
+---
+title: 'Troubleshoot the Learning Center'
+description: 'Fixes for the errors integrations hit most often against learning-api for this section.'
+kind: 'troubleshooting'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Troubleshooting'
+advice: true
+---
+
+Most <span className="kw">problems</span> integrating with this section come down to a missing `X-Workspace-Id` header on a workspace-scoped door, a version that was never published, or a list you expected to be narrower than it actually is. The list below covers what comes up most.
+
+<AccordionGroup>
+  <Accordion title="Publishing a module returns 422">
+    Check `practice_area_key` against what `packs-api` actually has registered. `learning-api` calls a reader seam against `packs-api`'s practice-area registry on every publish and rejects a key it has never seen — this is deliberate, not a validation bug, and it closed a real drift risk where the field used to accept any string.
+  </Accordion>
+  <Accordion title="Creating an assignment returns 422">
+    That means `module_key` and `module_version` together were never published. `POST /assignments` checks the pin against real published content before creating the row, rather than letting a dangling reference surface later as a `404` on read. Publish the version first, or assign the version `GET /internal/modules/{module_key}/current` actually returns.
+  </Accordion>
+  <Accordion title="An assignment or its progress returns 404 even though I created it">
+    Check the `X-Workspace-Id` header against the one used when the assignment was created. Every assignment and progress query filters by workspace first — a row from another workspace's header doesn't error differently than a row that never existed; both come back `404`.
+  </Accordion>
+  <Accordion title="The assignment list has more rows than I expected">
+    `GET /assignments` filters only by `assignee_id`, and only if you pass it. There is no `case_id` filter and no filter for "assignments a particular attorney made" — leaving `assignee_id` off returns every assignment in the workspace, and your integration reads `case_id` and `assigning_attorney_id` off each row itself to narrow further.
+  </Accordion>
+  <Accordion title="Recording the same lesson twice didn't create a second row">
+    That's correct behavior, not a bug to work around. `Progress` is keyed by `(assignment_id, lesson_key)`, and a repeat submission — including a genuine concurrent retry — returns the one existing row instead of erroring or duplicating it.
+  </Accordion>
+  <Accordion title="A citation in a lesson has no resolved text">
+    Check which door you called. `GET /internal/modules/{module_key}/current` and `GET /internal/modules/{module_key}/{version}` both resolve `statute_refs` against `state-law-api` and attach a `statutes` array; `GET /internal/modules` — the catalog listing — does not run that resolution at all. An unpublished citation is also an honest absence from the resolved array on the doors that do resolve it, not an error.
+  </Accordion>
+  <Accordion title="No suggestions appear for a case I expect one on">
+    Confirm the module's `addresses_finding_types` actually includes a finding type the case currently has, and that you didn't filter the call by a `practice_area_key` the module isn't published under. An empty `suggestions` array is an accurate read of the case's current findings against the catalog, not a failure of the door.
+  </Accordion>
+  <Accordion title="I expected a token or relationship check and didn't get one">
+    That's accurate for this service today. `learning-api` takes no `Authorization` header and calls no identity service — `assignee_id` and `assigning_attorney_id` are plain strings your integration supplies, and the only boundary enforced is the workspace one on `X-Workspace-Id`. Don't rely on this door to verify that a caller actually has the relationship it claims.
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck
+
+If none of the above accounts for what you're seeing, check `learning-api`'s own `docs/adr/` for a decision that names the behavior deliberately before assuming it's a defect, then contact support@fairstandard.com with the workspace ID, case ID, and the exact request you sent.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Learning Center overview" icon="book-open" href="/learning-center/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="How an assignment pins a module version" icon="link" href="/learning-center/developers/how-an-assignment-pins-a-module-version">
+    The pinning and immutability rules behind several of the errors above.
+  </Card>
+</Columns>

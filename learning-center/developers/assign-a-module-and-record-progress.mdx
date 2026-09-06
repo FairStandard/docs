@@ -1,0 +1,83 @@
+---
+title: 'Assign a module and record progress'
+description: 'Pin a published module version to an assignee inside a workspace, then record and read lesson completion against it.'
+kind: 'how-to'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Assign and track progress'
+advice: true
+---
+
+An assignment is a workspace-scoped row that pins one published module version to one assignee. This walks through creating it, marking a lesson complete, and reading back what's <span className="kw">pinned</span>.
+
+## Before you begin
+
+You need a `module_key` and `module_version` that have already been published — assigning a version that doesn't exist returns a `422`, not a dangling reference discovered later. Every door here requires `X-Workspace-Id`. There is no identity check: `assignee_id` and `assigning_attorney_id` are strings your integration supplies, not verified against `identity-api` or anything else.
+
+1. Create the assignment.
+
+   ```bash
+   curl -X POST https://learning-api.internal.fairstandard.com/assignments \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "module_key": "tx-custody-case-phases",
+       "module_version": 1,
+       "assignee_id": "'"$ASSIGNEE_ID"'",
+       "assigning_attorney_id": "'"$ATTORNEY_ID"'",
+       "case_id": "'"$CASE_ID"'"
+     }'
+   ```
+
+   `case_id` is optional — omit it for an assignment that stands on its own, ahead of or apart from any case. The response's `id` is what every progress call below needs.
+
+2. Look the assignment up by id, or list by assignee.
+
+   ```bash
+   curl https://learning-api.internal.fairstandard.com/assignments/$ASSIGNMENT_ID \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+
+   curl "https://learning-api.internal.fairstandard.com/assignments?assignee_id=$ASSIGNEE_ID" \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   `assignee_id` is the only filter the list door accepts. There is no `case_id` filter and no "assignments a particular attorney made" filter — leaving `assignee_id` off returns every assignment in the workspace, unfiltered, and your integration reads `case_id` and `assigning_attorney_id` off each row itself to narrow it further.
+
+3. Record a lesson complete.
+
+   ```bash
+   curl -X POST https://learning-api.internal.fairstandard.com/assignments/$ASSIGNMENT_ID/progress \
+     -H "X-Workspace-Id: $WORKSPACE_ID" \
+     -H "Content-Type: application/json" \
+     -d '{"lesson_key": "intake"}'
+   ```
+
+   `lesson_key` must match a key in the pinned version's own lesson list; nothing here validates that against the module's content, so a typo creates a progress row for a lesson key the assignment's lessons never had. Recording the same `lesson_key` twice, including under a concurrent retry, returns the one existing row rather than a duplicate.
+
+4. Read progress for the assignment.
+
+   ```bash
+   curl https://learning-api.internal.fairstandard.com/assignments/$ASSIGNMENT_ID/progress \
+     -H "X-Workspace-Id: $WORKSPACE_ID"
+   ```
+
+   Each row carries `lesson_key` and `completed_at`. An empty list means nothing has been marked complete yet, not that the assignment failed to create.
+
+## What happens next
+
+Every row above stays scoped to the workspace that created it — the same assignment id from another workspace's header returns a `404`, indistinguishable from an id that was never created. If `tx-custody-case-phases` gets a version 2 published later, this assignment keeps reading version 1's lesson list forever; nothing moves it forward automatically.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Publish a module version" icon="upload" href="/learning-center/developers/publish-a-module-version">
+    Where the version and lesson keys this assignment pins come from.
+  </Card>
+  <Card title="How an assignment pins a module version" icon="link" href="/learning-center/developers/how-an-assignment-pins-a-module-version">
+    The mechanics and reasoning behind the pin this how-to relies on.
+  </Card>
+</Columns>

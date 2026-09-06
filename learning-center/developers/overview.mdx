@@ -1,0 +1,51 @@
+---
+title: 'Learning Center overview'
+description: "What learning-api exposes today: a versioned module catalog, workspace-scoped assignments and progress, and case-driven suggestions."
+kind: 'overview'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Overview'
+advice: true
+---
+
+The Learning Center maps to one capability in the platform's canon register, `cap.learning`, and one service backs it: `learning-api`. This page walks through what its HTTP surface actually does — a versioned module <span className="kw">catalog</span>, workspace-scoped assignments and progress, and suggestions computed from a case's own findings — so you know which door to call before you read the register's own use cases into more than the build supports.
+
+## How it works
+
+Module content is shared platform content, not workspace data: `POST /internal/modules/{module_key}` publishes a new version, and the store assigns the next version number itself — the caller never sets it, and a unique `(module_key, version)` constraint absorbs two publishers racing for the same key. A module version, once published, is never edited or deleted; a change is always a new version. Publishing rejects a `practice_area_key` that `packs-api` has never registered with a `422`, checked live through a reader seam rather than trusted from the caller. None of the module content doors — `current`, a specific version, or the catalog — take an `X-Workspace-Id` header, because every workspace reads the same published content. See [learning-api's overview](/services/learning-api/index) and [domain model](/services/learning-api/domain-model).
+
+Assignments and progress are workspace-scoped: every door under `/assignments` requires `X-Workspace-Id`, and every store query filters on it — a row from another workspace doesn't exist as far as the query is concerned. `POST /assignments` pins `module_key` and `module_version` at the moment of assignment; a version that was never published returns a `422`, not a dangling reference discovered later. `case_id` is optional on the assignment itself. `POST /assignments/{id}/progress` records one lesson complete and is idempotent — recording the same lesson twice returns the same row, not a duplicate or an error.
+
+`GET /cases/{case_id}/suggest-modules` also requires `X-Workspace-Id`. It reads the case's finding types from `analysis-api` through a reader seam, reads the current catalog, and intersects the two: a module whose `addresses_finding_types` overlaps the case's findings is a suggestion, sorted by `module_key` for a stable order. That mapping lives entirely on the module's own content — there is no lookup table in this service's code to retune.
+
+A state process guide's lesson can carry `statute_refs`; reading one specific version resolves each reference against `state-law-api` at read time and attaches the live text, so a guide never quotes a citation that's gone stale. `GET /internal/modules` — the catalog listing — does not run this resolution; it returns raw `statute_refs` with no attached text.
+
+One gap worth naming plainly: `learning-api` never calls `identity-api` and takes no `Authorization` header on any door. `assignee_id` and `assigning_attorney_id` are strings the caller supplies and the service trusts as given — there is no relationship check like `messaging-api`'s, only the workspace boundary.
+
+## What you can do here
+
+- **Publish a module version.** `POST /internal/modules/{module_key}` — the store assigns the version number.
+- **Read the current or a specific version.** `GET /internal/modules/{module_key}/current` and `.../{version}`, both `404` if nothing matches.
+- **Browse the catalog.** `GET /internal/modules?practice_area_key=&jurisdiction=`, filtered or not.
+- **Assign a module to someone.** `POST /assignments`, pinning a real published version.
+- **Record and read progress.** `POST /assignments/{id}/progress` and `GET /assignments/{id}/progress`.
+- **Get suggestions for a case.** `GET /cases/{case_id}/suggest-modules`, computed from that case's findings.
+
+## Availability
+
+`cap.learning` carries a Basic tier requirement in the register and no per-case entitlement to check before calling any door named above. The register's own `implementation` field for this capability still reads `unbuilt`; the service running in this build contradicts that, and this page reflects the service, not the register field.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Get started with the Learning Center" icon="rocket" href="/learning-center/developers/get-started">
+    Publish a module, assign it, record progress, and pull suggestions for a case.
+  </Card>
+  <Card title="How an assignment pins a module version" icon="link" href="/learning-center/developers/how-an-assignment-pins-a-module-version">
+    Why a republish never moves an assignment, and what that means for your integration.
+  </Card>
+</Columns>

@@ -282,6 +282,18 @@
             ]
           },
           {
+            "group": "Learning center for developers",
+            "pages": [
+              "learning-center/developers/overview",
+              "learning-center/developers/get-started",
+              "learning-center/developers/publish-a-module-version",
+              "learning-center/developers/assign-a-module-and-record-progress",
+              "learning-center/developers/how-an-assignment-pins-a-module-version",
+              "learning-center/developers/your-app-needs-to-suggest-a-module-from-a-cases-findings",
+              "learning-center/developers/troubleshooting"
+            ]
+          },
+          {
             "group": "billing-payments-api",
             "pages": [
               "services/billing-payments-api/index",

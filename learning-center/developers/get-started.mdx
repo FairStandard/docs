@@ -1,0 +1,113 @@
+---
+title: 'Get started with the Learning Center'
+description: 'Publish a module version, assign it to someone, record their progress, and pull suggestions for a case.'
+kind: 'get-started'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Get started'
+advice: true
+---
+
+This guide takes you through the full <span className="kw">flow</span> `learning-api` actually supports: publishing a module version, assigning it inside a workspace, recording a lesson complete, and reading suggestions computed from a case's own findings.
+
+## What you'll learn
+
+- How to publish a module version, and why the version number is never yours to set
+- How to assign a published version to someone, with or without a case attached
+- How to record and read progress, and why recording the same lesson twice is safe
+- How to pull suggested modules for a case from its findings
+- Where the workspace boundary starts and stops across these doors
+
+## Before you begin
+
+You need a `practice_area_key` already registered on `packs-api` — publishing against an unregistered key returns a `422`. Module content doors take no `X-Workspace-Id`; assignment, progress, and suggestion doors all require it. There is no `Authorization` header or identity check anywhere on this service: `assignee_id` and `assigning_attorney_id` are plain strings you supply, not verified relationships.
+
+### Step 1: Publish a module version
+
+```bash
+curl -X POST https://learning-api.internal.fairstandard.com/internal/modules/tx-custody-case-phases \
+  -H "Content-Type: application/json" \
+  -d '{
+    "practice_area_key": "family-law",
+    "kind": "state_process_guide",
+    "title": "How a Texas custody case moves through its phases",
+    "jurisdiction": "TX",
+    "addresses_finding_types": ["custody_schedule", "deadline_compliance"],
+    "lessons": [
+      {"key": "intake", "title": "Intake", "body": "..."}
+    ]
+  }'
+```
+
+The response carries `module_key` and the `version` the store assigned — the first publish for a key is version 1, and every publish after it is one higher, computed server-side.
+
+### Step 2: Read it back
+
+```bash
+curl https://learning-api.internal.fairstandard.com/internal/modules/tx-custody-case-phases/current
+```
+
+`current` is the highest version published for that key. Fetching a specific version instead — `GET /internal/modules/tx-custody-case-phases/1` — returns that exact, immutable snapshot regardless of what's published after it.
+
+### Step 3: Assign the version to someone
+
+```bash
+curl -X POST https://learning-api.internal.fairstandard.com/assignments \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "module_key": "tx-custody-case-phases",
+    "module_version": 1,
+    "assignee_id": "'"$ASSIGNEE_ID"'",
+    "assigning_attorney_id": "'"$ATTORNEY_ID"'",
+    "case_id": "'"$CASE_ID"'"
+  }'
+```
+
+`case_id` is optional; leave it out for an assignment that stands on its own. The response carries an `id` you'll use for progress calls, plus the pinned `module_version` — a later publish of a newer version never moves this row.
+
+### Step 4: Record a lesson complete
+
+```bash
+curl -X POST https://learning-api.internal.fairstandard.com/assignments/$ASSIGNMENT_ID/progress \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"lesson_key": "intake"}'
+```
+
+Sending the same `lesson_key` again returns the same row rather than creating a second one or erroring — a retried request is safe.
+
+### Step 5: Pull suggestions for a case
+
+```bash
+curl "https://learning-api.internal.fairstandard.com/cases/$CASE_ID/suggest-modules?practice_area_key=family-law" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+The response lists each module whose `addresses_finding_types` overlaps a finding type already on the case, sorted by `module_key`, with the matched finding types named on each entry. An empty list means nothing on the case matches an existing module yet — not a failure.
+
+## Tips
+
+- Module content doors sit under `/internal/modules/...`; assignment, progress, and suggestion doors do not carry an `/internal` prefix. That split is deliberate, not an inconsistency to normalize in your own client.
+- `GET /internal/modules` — the catalog — returns raw `statute_refs` without resolved text. Only `current` and a specific version resolve citations against `state-law-api`.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Learning Center overview" icon="book-open" href="/learning-center/developers/overview">
+    What backs this section today and the gaps worth knowing about.
+  </Card>
+  <Card title="Publish a module version" icon="upload" href="/learning-center/developers/publish-a-module-version">
+    The publish door as a standalone how-to, including the practice-area check.
+  </Card>
+  <Card title="Assign a module and record progress" icon="send" href="/learning-center/developers/assign-a-module-and-record-progress">
+    The same assign-and-track flow, one step at a time.
+  </Card>
+  <Card title="Troubleshoot the Learning Center" icon="life-buoy" href="/learning-center/developers/troubleshooting">
+    Fixes for the errors you're most likely to hit integrating with this section.
+  </Card>
+</Columns>

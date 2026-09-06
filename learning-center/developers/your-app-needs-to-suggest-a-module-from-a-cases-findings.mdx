@@ -1,0 +1,45 @@
+---
+title: "Your app needs to suggest a module from a case's findings"
+description: 'Read suggestions for a case from suggest-modules, and understand exactly what makes a module match.'
+kind: 'use-case'
+audience: 'developers'
+section: 'learning-center'
+sidebarTitle: 'Suggest from findings'
+advice: true
+---
+
+Your integration wants to surface a relevant module the moment a case's record shows something a module addresses, without hardcoding any mapping between a finding type and a module yourself. `learning-api` computes exactly that <span className="kw">match</span> for you on one door.
+
+## What to do
+
+Call the suggestions door with the case's id:
+
+```bash
+curl "https://learning-api.internal.fairstandard.com/cases/$CASE_ID/suggest-modules?practice_area_key=family-law" \
+  -H "X-Workspace-Id: $WORKSPACE_ID"
+```
+
+`practice_area_key` is optional; leave it off to check against the full catalog rather than one practice area. The response's `suggestions` array lists each matching module with its `module_key`, `version`, `title`, and the specific `matched_finding_types` that made it relevant — enough to explain the suggestion to a user, not just surface it. An empty array means nothing on the case currently matches an existing module's `addresses_finding_types`; that's an accurate read of the case's record, not a sign the call failed.
+
+Nothing about calling this door assigns anything. If your integration wants a suggested module turned into an assignment, that's a separate `POST /assignments` call your code makes deliberately — suggesting and assigning are two different doors with two different effects.
+
+## What Vero does for you
+
+The service reads the case's finding types from `analysis-api` through a reader seam, reads the current catalog through the same store method the plain catalog listing uses, and intersects the two sets: any module whose `addresses_finding_types` overlaps the case's finding types is a suggestion. That mapping is data published on the module itself, never a table in this service's code — retuning which modules get suggested for which findings is a module republish, not a deploy. The result is sorted by `module_key`, so the same inputs always produce the same order; your integration doesn't need to re-sort or de-duplicate anything before showing it.
+
+A case with no findings yet, or findings that don't overlap anything published, gets an honest empty list rather than an error — the same doctrine `learning-api` applies to an unresolved statute citation. If you expect a suggestion that isn't appearing, check the module's `addresses_finding_types` against the case's actual finding types before assuming the door is wrong.
+
+<Note>
+  Vero explains legal process. It does not give legal advice.
+</Note>
+
+## Related topics
+
+<Columns cols={2}>
+  <Card title="Learning Center overview" icon="book-open" href="/learning-center/developers/overview">
+    Where suggestions sit alongside the catalog and assignments.
+  </Card>
+  <Card title="Assign a module and record progress" icon="send" href="/learning-center/developers/assign-a-module-and-record-progress">
+    Turn a suggestion your integration surfaced into a real assignment.
+  </Card>
+</Columns>
