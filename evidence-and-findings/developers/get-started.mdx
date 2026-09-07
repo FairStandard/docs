@@ -67,7 +67,7 @@ curl -X POST https://media-api.internal.fairstandard.com/internal/recordings \
   }'
 ```
 
-Registering a recording queues it for measurement immediately. Poll `GET /internal/recordings/{recording_id}` and watch `status` move from `received` toward `measured` — or `queue_failed`, which you recover from with `POST /internal/recordings/{recording_id}/requeue`, never by registering the same recording again.
+Registering a recording queues it for measurement immediately. Read `GET /internal/recordings/{recording_id}` once to confirm `status` came back `received` rather than `queue_failed` — recover a `queue_failed` recording with `POST /internal/recordings/{recording_id}/requeue`, never by registering the same recording again. This build does not yet run the worker that measures a queued recording; see [register a recording and read its measurements](/evidence-and-findings/developers/register-a-recording-and-read-its-measurements) for how a service learns one reached `measured` once it does.
 
 ## Tips
 

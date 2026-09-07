@@ -30,14 +30,14 @@ You need the recording's `content_hash` and its `evidence_file_key` — both com
 
    Registration deduplicates by content hash — sending the same hash twice in one workspace returns the existing row rather than starting a second measurement pass. A successful registration enqueues the recording immediately; its `status` starts at `received`.
 
-2. Poll for measurement to finish.
+2. Read the recording back to confirm registration.
 
    ```bash
    curl https://media-api.internal.fairstandard.com/internal/recordings/$RECORDING_ID \
      -H "X-Workspace-Id: $WORKSPACE_ID"
    ```
 
-   `status` moves from `received` to `measured` once the pipeline's measure stage completes, or to `failed` with an `error` field naming what went wrong. If the initial registration call could not queue the job at all, `status` comes back as `queue_failed` on the very first read — that recording was never stranded silently.
+   `status` comes back `received` once it queued. If the registration call could not queue the job at all, `status` comes back as `queue_failed` on this very first read — that recording was never stranded silently. This build does not yet run the worker that turns `received` into `measured` or `failed`, so this one read is what you need here; see "What happens next" for how a service reacts once that worker is running.
 
 3. Recover a `queue_failed` recording, if you see one.
 
@@ -63,7 +63,7 @@ You need the recording's `content_hash` and its `evidence_file_key` — both com
 
 ## What happens next
 
-Nothing on `media-api` notifies another service when a recording finishes measuring — a consumer that needs to react to `measured` status polls for it, the same way this walkthrough did. A recording's baseline updates automatically as a side effect of each measured recording; there is no separate call to make for that. Speaker enrollment (naming an anonymous track) is a decision this build does not expose a door for yet — every speaker read back here is already resolved, not something you enroll through this API.
+`media-api` publishes a `recording.measured` event the moment a recording reaches `measured`. A service that needs to react subscribes to that event and reads the recording through media's own door, rather than polling this endpoint in a loop — `analysis-api`'s own consumer is built this way. A scheduled catch-up sweep exists as a second layer, for a service that fell behind or is starting fresh; it is not how anything is meant to learn "done" first. A recording's baseline updates automatically as a side effect of each measured recording; there is no separate call to make for that. Speaker enrollment (naming an anonymous track) is a decision this build does not expose a door for yet — every speaker read back here is already resolved, not something you enroll through this API.
 
 ## Related topics
 
