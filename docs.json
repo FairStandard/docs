@@ -438,7 +438,8 @@
                   "services/entitlements-api/decisions/0001-resolve-is-never-cached-grants-are-not-decisions",
                   "services/entitlements-api/decisions/0002-tier-grants-expand-against-the-registry-at-resolve-time",
                   "services/entitlements-api/decisions/0003-pro-bono-is-a-whole-case-grant-not-an-org-flag",
-                  "services/entitlements-api/decisions/0004-identity-reader-is-shaped-around-the-real-verify-door"
+                  "services/entitlements-api/decisions/0004-identity-reader-is-shaped-around-the-real-verify-door",
+                  "services/entitlements-api/decisions/0005-the-store-narrows-grants-in-sql-the-resolver-still-decides"
                 ]
               },
               {
@@ -762,6 +763,7 @@
             "group": "servicekit",
             "pages": [
               "services/servicekit/index",
+              "services/servicekit/domain-model",
               {
                 "group": "Decisions",
                 "pages": [
@@ -773,7 +775,8 @@
                   "services/servicekit/decisions/0006-test-only-stream-helpers-leave-the-production-class",
                   "services/servicekit/decisions/0007-a-heartbeat-keeps-a-long-handler-from-being-reclaimed",
                   "services/servicekit/decisions/0008-a-shared-sibling-test-harness-not-two-copies",
-                  "services/servicekit/decisions/0009-a-reader-base-not-a-third-copy-of-the-http-ceremony"
+                  "services/servicekit/decisions/0009-a-reader-base-not-a-third-copy-of-the-http-ceremony",
+                  "services/servicekit/decisions/0010-events-go-through-the-outbox-only-submit-refuses-an-envelope"
                 ]
               }
             ]

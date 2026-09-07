@@ -63,3 +63,28 @@ served `org_role` per membership, and `tests/test_identity_reader.py`'s
 `FakeIdentityReader`/`HttpIdentityReader` contract test against the same
 payload shape covered the seam without changes.
 
+## Addendum: the reader sits on servicekit's base (FS-1034, 2026-09-06)
+
+`HttpIdentityReader` hand-wrote the retry-and-translate ceremony —
+`_call_doorway`, its own `IdentityRejected`/`IdentityUnavailable`
+classes carrying `status_code`/`detail`, the inner `attempt` closure,
+and the 401-means-`None` check. servicekit 0.3.3 collapsed exactly that
+into `doorway_errors` and `HttpReaderBase`, so the pin moved from
+servicekit 0.1.0 (`7374ce7`) to 0.3.3 (`f76aac1`, origin/main) and the
+reader now subclasses `HttpReaderBase`. `verify()` is one `_get_json`
+call with `absent_on={401}`; `IdentityRejected` and `IdentityUnavailable`
+are the kit's classes (same attribute names, and both still subclass
+`IdentityReaderError`). The `IdentityReader` Protocol and
+`FakeIdentityReader` stay here, as servicekit's own rule requires; the
+constructor is unchanged, so `main.py` and the existing tests did not
+move.
+
+The same change closed a gap the hand-written wrapper never proved:
+`tests/test_identity_reader.py` now pins a 403 → `IdentityRejected`
+(with its status code), an outage past the retry budget →
+`IdentityUnavailable`, and a 503-then-200 still verifying. And because
+nothing in `main.py` had ever caught those two errors — they surfaced
+as a bare 500 — the grant doors now answer 503 when identity-api is
+unavailable and 502 when it refuses the call, each with a test in
+`tests/test_api.py`.
+

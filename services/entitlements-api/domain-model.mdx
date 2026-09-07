@@ -28,6 +28,32 @@ every call. See ADR 0001, resolver.py.
 _Avoid_: check, authorize (this is not an authentication check — it
 answers a billing/access question, not an identity question)
 
+**Decision**: What `resolve()` hands back — allowed or not, a short
+reason (`grant found`, `pro bono`, `tier includes it`, `nothing`), and
+the id of the grant that decided it. This is the resolved outcome the
+Grant entry above says an entitlement is. Never stored, never cached;
+it exists only for the call that asked. See resolver.py.
+_Avoid_: entitlement (bare), result, verdict (a Finding word, owned by
+analysis)
+
+**Active window**: The span in which a grant can count — from
+`active_from`, until `active_until` if set, and only while `revoked_at`
+is null. Outside its window a grant is still a stored fact but never a
+candidate. Revocation is a stamp, never a delete, so the trail stays.
+See resolver.py `_is_active`, ADR 0001.
+_Avoid_: expired (a grant past `active_until` and a revoked grant are
+both simply outside their window), deleted
+
+**Grants in scope**: The grants the store hands the resolver for one
+question: every unrevoked grant in the workspace that is org-wide
+(`case_id` null) or scoped to the case asked about. This narrows only
+on rules the resolver itself applies, so it can never hide a grant the
+resolver would have accepted. Shape (capability, tier, pro bono),
+active window, and beneficiary stay the resolver's call. See ADR 0005,
+store.py `grants_in_scope`.
+_Avoid_: candidates (the resolver's word for the grants that pass its
+own active-window and scope checks), matching grants
+
 **Capability key**: A registry string (for example `cap.deadlines`),
 never a Python enum — the same extensibility rule every vocabulary field
 on the platform follows (canon locked-decisions.yaml). Owned by
@@ -72,10 +98,12 @@ door — the only read door identity-api actually serves for org/membership
 facts. Used to confirm the acting bearer token belongs to a live member
 of the paying org, with an authorized org role
 (`settings.authorized_grant_roles`), before a grant is issued or
-revoked. `HttpIdentityReader` speaks the real door through servicekit's
-doorway contract; `FakeIdentityReader` backs it for tests. See ADR 0004
-(and its FS-912 addendum), identity_reader.py, store.py's
-`_require_member`.
+revoked. `HttpIdentityReader` is a servicekit `HttpReaderBase` reader,
+so retries and error translation are the kit's, not ours;
+`FakeIdentityReader` backs it for tests. identity-api being unreachable
+is `IdentityUnavailable` (503 at the door); a refusal is
+`IdentityRejected` (502). See ADR 0004 (and its FS-912 and FS-1034
+addenda), identity_reader.py, store.py's `_require_member`.
 _Avoid_: auth client, org client
 
 **Workspace**: The tenant boundary every row in this store carries.

@@ -387,6 +387,75 @@ synchronous network call) freezes the heartbeat along with it, so any
 genuinely blocking work inside a heartbeating handler needs to go
 through `asyncio.to_thread` or an equivalent, not run inline.
 
+### Events: the outbox and relay toolkit (`events/`)
+
+`servicekit.events` is the ten-name public surface for the outbox-and-relay
+shape: a service writes an `Envelope` to its own outbox table in the same
+transaction as the state change it describes, and a `Relay` carries it to
+that service's `events:{service}` stream on its own schedule. Vocabulary
+and naming rules (stream key, consumer group, dead-letter stream, error
+hash, replay door, `source`/`type`/`subject`) live in `CONTEXT.md`, not
+here — read that first if a term below is unfamiliar.
+
+```python
+from servicekit.events import Envelope, EnvelopeCodec, new_envelope
+
+envelope = new_envelope(
+    source="https://media-api.internal/internal",
+    type="com.fairstandard.media-api.recording.transcribed",
+    subject=recording_id,
+    data=f"https://media-api.internal/internal/recordings/{recording_id}",
+)
+```
+
+`Envelope` is a frozen dataclass conforming to CloudEvents 1.0.2's binary
+mode: `id`, `source`, `type`, `subject`, `time`, `datacontenttype`, `data`
+(a door pointer, never the record's own content), plus `extensions` — an
+empty-by-default mapping for any extra named labels a producer attaches.
+`EnvelopeCodec` turns it into the flat `dict[str, str]` shape
+`servicekit.streams.xadd()` writes to a Redis Stream, and back.
+
+`OutboxWriter`/`OutboxReader` are Protocols with no sqlalchemy import, so
+a service that has not adopted the sqlalchemy extra still pays nothing to
+import `servicekit.events`. `servicekit.events.sqlalchemy` (reached only
+by its own explicit import, the same way `servicekit.fastapi` and
+`servicekit.testing` already work) provides `outbox_table`,
+`event_outbox_migration_ops`, and `SqlAlchemyOutbox` — the Postgres
+implementation of both Protocols, including a leased `relay_batch` (one
+`pg_try_advisory_xact_lock` per outbox table, so more than one replica
+running a `Relay` never relays the same batch concurrently — delivery
+itself is at-least-once, never at-most-once: a crash between publish and
+commit republishes a row on the next pass rather than losing it), a keyset
+`list_relayed_since` for the replay door below, and a batched
+`trim_relayed`.
+
+`Relay` wraps an `OutboxReader` and a `Publisher` (`StreamPublisher` is
+the one shipped implementation): `run_once()` claims one batch and
+publishes it; `run_forever()` loops that on a fixed poll interval, runs
+`trim_relayed` on its own separate cadence, and logs and continues past
+any ordinary exception from either pass rather than crashing the
+process — `SystemExit`, `KeyboardInterrupt`, and
+`asyncio.CancelledError` still end the loop, since those are shutdown
+signals, not failures to recover from. Construction raises `ValueError`
+if the outbox's own retention is shorter than the stream's, since
+trimming a relayed row before the stream's own copy could expire would
+open a replay gap.
+
+A consumer that fell behind, or missed a window entirely, reads a
+producer's history back through the replay door:
+`servicekit.fastapi.events_replay_router(outbox)` mounts
+`GET /events/since?time=<iso>&cursor=` in that producer's own FastAPI
+app, and `HttpReplayReader` is the matching client, built on
+`HttpReaderBase` (see above) exactly like every other reader in this
+toolkit.
+
+`StreamQueue.submit()` refuses an `Envelope`, and refuses any job payload
+addressed to a stream key starting with `events:` — an event only ever
+reaches a stream through a `Relay`. `StreamPublisher.publish()` is the
+mirror guard: it requires an `events:` stream key. See
+`docs/adr/0010-events-go-through-the-outbox-only-submit-refuses-an-envelope.md`
+for why both guards exist and why extensions ship from the first release.
+
 ### dataclass_codec (`codec.py`)
 
 Builds a `Codec` from a dataclass's own field types — `str`, `int`,
@@ -613,6 +682,18 @@ into its consumers, pinned to the commit SHA this build merged as.
 
 ## Changelog
 
+- **0.4.0** (FS-1022, 2026-09-06) — added `servicekit.events`: `Envelope`
+  (CloudEvents 1.0.2 core attributes plus `extensions`), `EnvelopeCodec`,
+  the outbox table and its SQLAlchemy adapter, the producer replay door
+  (`OutboxReader.list_relayed_since`,
+  `servicekit.fastapi.events_replay_router`, `HttpReplayReader`), batched
+  outbox trimming (`OutboxReader.trim_relayed`), and `Relay` (leased per
+  outbox). `StreamQueue.submit()` now refuses an `Envelope` and refuses
+  any job on an `events:` stream key; `StreamPublisher` requires one.
+  `StreamQueue`'s error hash is now per consumer group
+  (`{stream}:errors:{group}`) and every dead letter carries
+  `consumer_group`. See `CONTEXT.md` for the events vocabulary and
+  `docs/adr/0010-events-go-through-the-outbox-only-submit-refuses-an-envelope.md`.
 - **0.3.3** (FS-986/FS-987 follow-up, 2026-09-05) — added
   `HttpReaderBase`: the `client`/`retries`/`_get_json`/`_post_json`
   ceremony every `Http<Name>Reader` hand-writes on two open, unmerged

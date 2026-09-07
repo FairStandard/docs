@@ -1,0 +1,114 @@
+---
+title: "Domain model"
+description: "The shared vocabulary for the outbox-and-relay shape (FS-1022/FS-1023). One meaning per term; avoid-lists keep it from splitting into two ideas of the same…"
+---
+
+The shared vocabulary for the outbox-and-relay shape (FS-1022/FS-1023). One
+meaning per term; avoid-lists keep it from splitting into two ideas of the
+same thing across services. FS-1023 adds no new words — it reuses this list.
+
+**Event**:
+A fact that already happened, told once, never asked for twice.
+_Avoid_: message, notification, job.
+
+**Job**:
+One piece of work a service hands to its own worker to do (servicekit's
+existing `StreamQueue` payload shape). A job never leaves the service that
+created it; anything another service consumes is an event, and reaches a
+stream only through the outbox (the canon article, as amended by FS-1031).
+An `Envelope` is never a `Job` and a `Job` is never an `Envelope` — the two
+payload families do not mix on the same stream.
+_Avoid_: task, event.
+
+**Envelope**:
+The standard label on every event: who sent it, what kind it is, which
+record it is about, when it happened, and a way back to the record. Its
+fields are `id`, `source`, `type`, `subject`, `time`, `datacontenttype`,
+and `data` (a door pointer, never the record's own content), plus
+`extensions` — any extra named labels a producer attaches, empty by
+default — and a fixed `specversion` of `"1.0"` on the wire.
+_Avoid_: header, wrapper, message.
+
+**Outbox**:
+A database table, in the same database as the state change, that holds an
+event row until it has been carried to the stream. Writing to it is part
+of the same transaction as the state change.
+_Avoid_: queue table, buffer.
+
+**Relay**:
+The role that reads unrelayed outbox rows, carries each to Redis, and
+marks it done — the thing that turns "I wrote a row" into "I told the
+stream." A service can run any number of `Relay` replicas; a
+transaction-scoped advisory lease (see ADR 0010) lets only one of them
+run a given relay pass at a time, so the ordering guarantee holds
+however many replicas are actually running, not because an operator
+promised to run exactly one.
+_Avoid_: publisher, poller, worker, "the one process."
+
+**Consumer group**:
+The name a listening service signs in under, so Redis remembers what that
+service has already read. Each consuming service has one.
+_Avoid_: subscriber, listener.
+
+**Idempotent consumer**:
+A consumer that is safe to run twice on the same event — it checks whether
+it already did the work for that event's id before doing it again.
+_Avoid_: dedupe, safe handler.
+
+**Door pointer**:
+The `data` field on an `Envelope` — the producing service's own door
+address, never the record's content. A consumer gets the real content by
+calling the door.
+_Avoid_: payload, body, link.
+
+**Reconciliation sweep**:
+A scheduled check of a door for "what changed since X," run to catch
+anything a stream missed. Never the primary path — the canon's own words
+for this rule.
+_Avoid_: poll, backfill, catch-up job.
+
+**Retention window**:
+How long a stream keeps old entries before removing them, measured in
+time, not a count of messages.
+_Avoid_: TTL, max length.
+
+## Naming rules
+
+Fixed naming rules for every producer and consumer — not a free choice per
+service, so a builder never has to guess or invent one.
+
+- **Stream key**: `events:{producer-service}` — e.g. `events:media-api`.
+  The `events:` prefix is reserved for event streams: only a `Relay` (via
+  `StreamPublisher`) ever adds an entry to a key in it, and
+  `StreamQueue.submit()` refuses to submit a job onto one. A job stream is
+  any other key, and a job never leaves the service that created it.
+  (Consumers still write the stream's own bookkeeping — the consumer
+  group, XACK, and the error hash and dead-letter stream below — that is
+  reading-side state, not an entry.)
+- **Consumer group**: the consuming service's own name — e.g.
+  `analysis-api`.
+- **Dead-letter stream**: `dlq:events:{producer-service}` — e.g.
+  `dlq:events:media-api`, shared by every consumer group of that stream;
+  each dead letter carries a `consumer_group` field naming which group
+  gave up on it.
+- **Error hash**: `events:{producer-service}:errors:{consumer-group}` —
+  e.g. `events:media-api:errors:analysis-api` — one per consumer group,
+  never shared, so two consumers of one stream can never overwrite each
+  other's last-error records.
+- **Replay door**: `GET {source}/events/since?time=<iso>&cursor=` on the
+  producer, where `{source}` is the envelope `source` below — e.g.
+  `https://media-api.internal/internal/events/since`. One route shape for
+  every producer, mounted by `servicekit.fastapi.events_replay_router`.
+- **source**: the producer's door base URL, held constant per service —
+  e.g. `https://media-api.internal/internal`.
+- **type**: reverse-DNS style,
+  `com.fairstandard.<service>.<entity>.<past-tense-verb>` — e.g.
+  `com.fairstandard.media-api.recording.transcribed`.
+- **subject**: the entity's own id — e.g. the recording id.
+
+The `events:` prefix is enforced at runtime on both sides (`submit()`
+refuses it, `StreamPublisher` requires it); the rest are naming rules a
+builder follows and a reviewer checks. The sibling contract test (FS-1023)
+is where a wrong stream key or group name for the fixture app would
+actually be caught, since a mismatch there breaks the test.
+

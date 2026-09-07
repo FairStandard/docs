@@ -1,0 +1,67 @@
+---
+title: "5. The store narrows grants in SQL; the resolver still decides"
+description: "Date: 2026-09-06"
+---
+
+Date: 2026-09-06
+
+## Status
+
+Accepted
+
+## Context
+
+`Store.resolve()` used to select every unrevoked grant in the workspace
+and then keep, in Python, the rows whose shape could cover the requested
+capability — a direct grant for that key, any tier grant, or a
+whole-case pro-bono grant. That Python filter was a second copy of the
+shape rules `resolver.resolve()` already applies, with the `"pro-bono"`
+source literal spelled in both files. It also ignored the case: a
+workspace with many cases paid for all of them on every resolve, and
+resolve is the hot path ADR 0001 keeps uncached on purpose.
+
+Two ways to fix the over-fetch were on the table:
+
+1. Push the whole candidate rule into SQL — shape, active window, case,
+   beneficiary — and let the resolver trust the store.
+2. Push into SQL only the rules that are exactly the resolver's own
+   scope rules and cheap to index, delete the Python shape filter, and
+   leave everything else to the pure resolver.
+
+Option 1 would make the decision depend on a query. `resolver.resolve()`
+is a pure function over plain data (ADR 0001) and every rule it applies
+is unit-tested with no database; moving those rules into SQL would
+either duplicate them or move the tests onto Postgres.
+
+## Decision
+
+`Store.grants_in_scope(workspace_id, case_id)` is the one door the
+resolver's input comes through. It returns every grant in the workspace
+where `revoked_at IS NULL` and `case_id IS NULL OR case_id = :case_id`,
+ordered by id. Those two conditions are the resolver's own rules
+(`_is_active` refuses a revoked grant; `_scope_matches` refuses a
+case-scoped grant for another case or for a case-less request), so the
+set the store hands over is always a superset of what the resolver
+would accept. Nothing about shape, active dates, or beneficiary is
+decided in SQL. `store.py` no longer names `"pro-bono"` at all;
+`resolver.py` is the single owner of which grant kinds can cover a
+capability.
+
+The ordering is deliberate: with the shape pre-filter gone, more rows
+reach the resolver, and `Decision.grant_id` must be stable when several
+grants qualify. The resolver's loops return only on a matching shape, so
+a non-matching row is never a reason — it is skipped.
+
+## Consequences
+
+`tests/test_store.py::test_grants_in_scope_returns_every_grant_resolve_could_accept_for_the_case`
+is the proof of the superset rule: a table of grants (org-wide, on the
+case, on another case, whole-case pro-bono, org-wide tier, revoked) and
+an exact expected list. `resolve()` tests are unchanged and stay
+database-free.
+
+A future run that wants to narrow further must keep the same rule:
+only a condition the resolver already applies, and only when it can be
+proven a superset. Narrowing on shape, active window, or beneficiary in
+SQL would be a second copy of the resolver, which this ADR refuses.
+

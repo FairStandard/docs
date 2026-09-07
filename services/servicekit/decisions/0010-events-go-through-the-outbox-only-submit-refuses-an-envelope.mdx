@@ -1,0 +1,78 @@
+---
+title: "Events go through the outbox only — submit() refuses an Envelope"
+description: "Ruled 2026-09-06 (FS-1022)."
+---
+
+Ruled 2026-09-06 (FS-1022).
+
+## Building the outbox and relay in-house, not adopting a library
+
+Three candidates were checked before writing `SqlAlchemyOutbox` and
+`Relay` from scratch. The CloudEvents SDK calls itself work in progress
+and has no Redis Streams binding — this platform's transport. `pactix`'s
+maintenance status could not be confirmed. `pgmq` is a self-contained
+Postgres queue: the wrong shape for a bridge into Redis Streams, since it
+wants to be the queue itself rather than a staging table in front of one.
+None of the three fit the actual job — carry a row from a service's own
+Postgres transaction into that service's own Redis stream, in order, at
+least once (a crash between XADD and commit republishes the row on the
+next pass rather than losing it — never at most once) — so the toolkit
+builds it directly, the same way `streams.py` and `doorway.py` already do
+for this platform's other shared mechanics.
+
+## submit() refuses an Envelope; a job never leaves its own events: key
+
+`StreamQueue.submit()` now raises if handed an `Envelope`, and raises if
+asked to submit a job onto a stream key starting with `events:`. Both
+guards exist so nothing can reach an event stream except through the
+outbox and its `Relay`, ever, by mistake — a service cannot accidentally
+`XADD` an event directly and skip the outbox's durability. This is the
+enforceable slice of the canon's own rule that a job never leaves the
+service that created it (the canon article, as amended by FS-1031):
+before this ticket the rule was prose a reviewer had to remember; after
+it, `submit()` itself refuses the violation.
+
+## A transaction-scoped Postgres advisory lease, not a deployment rule
+
+The alternative to leasing was a deployment rule: "run exactly one
+`Relay` per service." That rule is only true if every operator remembers
+it, and a second replica racing the first would double-relay rows or
+relay them out of order. `relay_lease_key` derives one
+`pg_try_advisory_xact_lock` key per outbox table name, held for the
+duration of one relay pass; a replica that cannot take the lock skips
+that pass rather than racing. The lease costs one `SELECT` per pass and
+makes ordering true under any replica count, not just under a rule
+someone has to keep honoring.
+
+## One replay door and one client, not one per service
+
+Every producer needs the same route: page through rows already relayed,
+since a given time, by cursor. `servicekit.fastapi.events_replay_router`
+and `HttpReplayReader` are that route and that client, built once in the
+toolkit rather than left for each service to hand-write its own paging
+and its own retry-and-translate ceremony — the same reasoning as
+`HttpReaderBase` (ADR 0009) applied to this one specific door shape.
+
+## CloudEvents extensions ship in the first release
+
+The draft cut `extensions` from `Envelope` for the first release, since
+nothing on this platform sets one yet. Christopher overruled that cut on
+2026-09-06: adding the column and the wire field later would be a schema
+migration and a wire-format change in every producing service, not just
+in the toolkit. That fails the platform's own zero-refactor rule — the
+one that asks whether a shape still holds at a much larger scale without
+a rewrite. `extensions` ships now, empty by default, so the day a
+producer needs one, it is a code change in that producer alone.
+
+## Deletion test
+
+`tests/test_streams_submit_guard.py` has one test per guard:
+`test_submit_rejects_an_envelope` submits a `FakeEnvelope` (a lightweight
+`EventPayload` stand-in, so the test doesn't need a real outbox row to
+build a real `Envelope`) and asserts `submit()` raises; a separate
+runtime check against a real `servicekit.events.Envelope` confirms the
+same guard fires there too. `test_a_job_never_leaves_its_service` submits
+a plain job payload onto an `events:` key and asserts `submit()` raises
+there too. If either guard were removed, its own test's `submit()` call would
+succeed instead of raising, and that test fails.
+

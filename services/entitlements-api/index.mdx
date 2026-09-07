@@ -50,18 +50,27 @@ and pull request. Tests spin up a real Postgres via testcontainers
   path at runtime or in CI — canon is read-only to this service.
 - `store.py` — the orchestration layer: `issue_grant`/`revoke_grant`
   (org-scoped via `IdentityReader`, deduped so re-issuing the same grant
-  never double-bills), `resolve` (fetches fresh grants and the
-  capability's tier, then calls `resolver.resolve`), `list_grants_by_case`,
-  `ensure_seeds`.
+  never double-bills), `grants_in_scope` (the unrevoked grants that are
+  org-wide or scoped to the case asked about — the only narrowing done
+  in SQL, and only on rules the resolver applies itself, ADR 0005),
+  `resolve` (fetches the grants in scope and the capability's tier,
+  then calls `resolver.resolve`), `list_grants_by_case`, `ensure_seeds`.
 - `identity_reader.py` — the `IdentityReader` seam to identity-api's real
-  `GET /internal/verify` door (ADR 0004). `HttpIdentityReader` speaks it
-  through servicekit's doorway contract; `FakeIdentityReader` backs it
-  for tests.
+  `GET /internal/verify` door (ADR 0004). `HttpIdentityReader` is a
+  servicekit `HttpReaderBase` reader; `FakeIdentityReader` backs it for
+  tests. identity-api being unavailable surfaces as 503 from the grant
+  doors, a refusal as 502.
 - `main.py` — the internal HTTP surface, workspace-scoped by
-  `X-Workspace-Id`: issue grant, revoke grant, resolve, list-grants-by-case.
+  `X-Workspace-Id` (servicekit's header dependency): issue grant, revoke
+  grant, resolve, list-grants-by-case.
 
 Decision records live in `docs/adr/`; the domain glossary in
-`CONTEXT.md`.
+`CONTEXT.md`; what the old platform did about entitlements, and what
+was kept, in `docs/research/platform-dissection.md`.
+
+`servicekit` is pinned by commit in `pyproject.toml` (0.3.3 today).
+Bumping it is a deliberate diff: change the `rev`, run `uv lock`, and
+commit `uv.lock` with it.
 
 ## Out of scope this wave
 
